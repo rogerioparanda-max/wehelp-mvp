@@ -512,23 +512,26 @@ def format_bullets_from_df(df: pd.DataFrame, label_col: str, value_col: str, max
 def answer_question(question: str, insights: Dict[str, object]) -> str:
     q = question.lower().strip()
     selected_unit = insights.get("selected_unit", "Todas as unidades")
-    overall_nps = insights["overall_nps"]
-    zone = insights["zone"]
-    benchmark_gap = insights["benchmark_gap"]
+    overall_nps = insights.get("overall_nps", np.nan)
+    zone = insights.get("zone", "Sem dados")
+    benchmark_gap = insights.get("benchmark_gap", np.nan)
     network_nps = insights.get("network_nps", np.nan)
     unit_vs_network_gap = insights.get("unit_vs_network_gap", np.nan)
-    priorities = insights["top_priorities"]
-    strengths = insights["top_strengths"]
-    problems = insights["problems"]
-    complaint_tags = insights["complaint_tags"]
-    compliment_tags = insights["compliment_tags"]
-    suggestion_tags = insights["suggestion_tags"]
-    weekly = insights["weekly"]
-    period = insights["period"]
-    units = insights["units"]
+    priorities = insights.get("top_priorities", pd.DataFrame())
+    strengths = insights.get("top_strengths", pd.DataFrame())
+    problems = insights.get("problems", {})
+    complaint_tags = insights.get("complaint_tags", pd.DataFrame())
+    compliment_tags = insights.get("compliment_tags", pd.DataFrame())
+    suggestion_tags = insights.get("suggestion_tags", pd.DataFrame())
+    weekly = insights.get("weekly", pd.DataFrame())
+    period = insights.get("period", pd.DataFrame())
     variability = insights.get("network_variability", pd.DataFrame())
     comment_evidence = insights.get("comment_evidence", pd.DataFrame())
-    delta = insights["why_fell_delta"]
+    delta = insights.get("why_fell_delta", np.nan)
+
+    def md_join(lines: List[str]) -> str:
+        return "
+".join([str(x) for x in lines if str(x).strip()])
 
     def top_tags(df: pd.DataFrame, max_items: int = 3) -> str:
         if df is None or df.empty:
@@ -536,6 +539,8 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         return ", ".join(df["tag"].astype(str).head(max_items).tolist())
 
     def worst_segment(df: pd.DataFrame, label_col: str) -> Optional[Tuple[str, float, int]]:
+        if df is None or df.empty:
+            return None
         valid = df[df["respostas"] >= 5].copy()
         valid = valid[pd.notna(valid["nps"])]
         if valid.empty:
@@ -558,24 +563,24 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         return match.iloc[0]
 
     def executive_intro() -> str:
-        intro = f"""**Leitura executiva da unidade**
-    Unidade analisada: **{selected_unit}**. Seu NPS está em **{overall_nps}**, classificado como **{zone}**.
-    A distância para o benchmark é de **{benchmark_gap}** pontos."""
-        
+        parts = [
+            "**Leitura executiva da unidade**",
+            f"Unidade analisada: **{selected_unit}**.",
+            f"Seu NPS está em **{overall_nps}**, classificado como **{zone}**.",
+            f"A distância para o benchmark é de **{benchmark_gap}** pontos.",
+        ]
         if selected_unit != "Todas as unidades" and pd.notna(network_nps):
-            intro += f" O NPS geral da rede está em **{network_nps}**"
+            parts.append(f"O NPS geral da rede está em **{network_nps}**.")
             if pd.notna(unit_vs_network_gap):
                 direction = "acima" if unit_vs_network_gap >= 0 else "abaixo"
-                intro += f", e a sua unidade está **{abs(unit_vs_network_gap)}** pontos {direction} da média da rede."
-            else:
-                intro += "."
-                
-        return intro
+                parts.append(f"A sua unidade está **{abs(unit_vs_network_gap)}** pontos {direction} da média da rede.")
+        return " ".join(parts)
 
     if any(x in q for x in ["maiores pontos de atenção", "pontos de atenção", "atenção"]):
-        bullets = []
-        evidence_parts = []
-        network_parts = []
+        bullets: List[str] = []
+        evidence_parts: List[str] = []
+        network_parts: List[str] = []
+
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
             bullets.append(
@@ -583,7 +588,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
             )
             examples = examples_for_touchpoint(tp, "Detrator", 1)
             if examples:
-                evidence_parts.append(f"- Em **{tp}**, clientes da unidade dizem coisas como: \"{examples[0]}\"")
+                evidence_parts.append(f"- Em **{tp}**, clientes da unidade dizem coisas como: \"{examples[0]}\".")
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
                 network_parts.append(
@@ -591,51 +596,51 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
                 )
 
         worst_period = worst_segment(period, "period")
-        evidence_text = f"o período mais pressionado da sua unidade é **{worst_period[0]}** com NPS **{worst_period[1]}**" if worst_period else "não há base suficiente para apontar um período crítico com segurança"
-
-        problem_text = ""
-
-        if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
-            problem_text = f"""**Impacto do problema reportado na unidade**
-
-        - NPS com problema: **{problems['nps_problem']}**
-        - NPS sem problema: **{problems['nps_no_problem']}**
-        - Clientes com problema reportado: **{problems['pct_problem']}%**
-        """
-        
-        return (
-            executive_intro()
-            + "
-
-**Onde estão os maiores pontos de atenção da sua unidade**
-"
-            + ("
-".join(bullets) if bullets else "- Não há base suficiente para apontar prioridades com segurança.")
-            + f"""**Onde a sua operação está mais pressionada**
-{evidence_text}."
-            + f"""**Leitura de causa raiz**
-As tags de reclamação mais recorrentes na sua unidade são **{top_tags(complaint_tags)}**."
-            + ("
-
-**Voz do cliente da unidade**
-" + "
-".join(evidence_parts) if evidence_parts else "")
-            + ("
-
-**Comparação com a rede**
-" + "
-".join(network_parts) if network_parts else "")
-            + problem_text
-            + "
-
-**Conclusão**
-O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade hoje, mas sempre comparando com a rede para entender o que é problema local de execução e o que é padrão estrutural."
+        evidence_text = (
+            f"O período mais pressionado da sua unidade é **{worst_period[0]}** com NPS **{worst_period[1]}**."
+            if worst_period
+            else "Não há base suficiente para apontar um período crítico com segurança."
         )
 
+        problem_lines: List[str] = []
+        if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
+            problem_lines = [
+                "**Impacto do problema reportado na unidade**",
+                f"- NPS com problema: **{problems['nps_problem']}**",
+                f"- NPS sem problema: **{problems['nps_no_problem']}**",
+                f"- Clientes com problema reportado: **{problems['pct_problem']}%**",
+            ]
+
+        lines = [
+            executive_intro(),
+            "",
+            "**Onde estão os maiores pontos de atenção da sua unidade**",
+            md_join(bullets) if bullets else "- Não há base suficiente para apontar prioridades com segurança.",
+            "",
+            "**Onde a sua operação está mais pressionada**",
+            evidence_text,
+            "",
+            "**Leitura de causa raiz**",
+            f"As tags de reclamação mais recorrentes na sua unidade são **{top_tags(complaint_tags)}**.",
+        ]
+        if evidence_parts:
+            lines += ["", "**Voz do cliente da unidade**", md_join(evidence_parts)]
+        if network_parts:
+            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        if problem_lines:
+            lines += [""] + problem_lines
+        lines += [
+            "",
+            "**Conclusão**",
+            "O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade hoje, mas sempre comparando com a rede para entender o que é problema local de execução e o que é padrão estrutural.",
+        ]
+        return md_join(lines)
+
     if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
-        actions = []
-        evidence_parts = []
-        network_parts = []
+        actions: List[str] = []
+        evidence_parts: List[str] = []
+        network_parts: List[str] = []
+
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
             actions.append(
@@ -643,7 +648,7 @@ O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade h
             )
             examples = examples_for_touchpoint(tp, "Detrator", 1)
             if examples:
-                evidence_parts.append(f"- Em **{tp}**, os clientes da unidade relatam: \"{examples[0]}\"")
+                evidence_parts.append(f"- Em **{tp}**, os clientes da unidade relatam: \"{examples[0]}\".")
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
                 network_parts.append(
@@ -651,10 +656,10 @@ O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade h
                 )
 
         worst_period = worst_segment(period, "period")
-        focused_actions = []
+        focused_actions: List[str] = []
         if worst_period:
             focused_actions.append(f"- Trate **{worst_period[0]}** como operação prioritária, porque é o período com pior NPS da sua unidade.")
-        if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
+        if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
             focused_actions.append(
                 f"- Reforce o fechamento de problemas: na sua unidade, quem reporta problema tem NPS **{problems['nps_problem']}**, contra **{problems['nps_no_problem']}** entre os demais."
             )
@@ -663,43 +668,32 @@ O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade h
                 f"- Sua unidade está abaixo da média da rede em **{abs(unit_vs_network_gap)}** pontos. Priorize execução disciplinada nos touchpoints críticos antes de abrir novas frentes."
             )
 
-        return (
-            executive_intro()
-            + "
-
-**O que fazer para melhorar o NPS da sua unidade**
-"
-            + ("
-".join(actions) if actions else "- Não há base suficiente para definir prioridades com segurança.")
-            + "
-
-**Onde concentrar a execução do gerente**
-"
-            + ("
-".join(focused_actions) if focused_actions else "- Ainda não há base suficiente para apontar um recorte operacional prioritário.")
-            + f"
-
-**Leitura qualitativa da unidade**
-Os temas mais citados nas reclamações são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**."
-            + ("
-
-**Voz do cliente da unidade**
-" + "
-".join(evidence_parts) if evidence_parts else "")
-            + ("
-
-**Comparação com a rede**
-" + "
-".join(network_parts) if network_parts else "")
-            + "
-
-**Recomendação executiva**
-O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é atacar 2 ou 3 prioridades da unidade, medir semanalmente e comparar com o comportamento da rede para separar falha local de problema estrutural."
-        )
+        lines = [
+            executive_intro(),
+            "",
+            "**O que fazer para melhorar o NPS da sua unidade**",
+            md_join(actions) if actions else "- Não há base suficiente para definir prioridades com segurança.",
+            "",
+            "**Onde concentrar a execução do gerente**",
+            md_join(focused_actions) if focused_actions else "- Ainda não há base suficiente para apontar um recorte operacional prioritário.",
+            "",
+            "**Leitura qualitativa da unidade**",
+            f"Os temas mais citados nas reclamações são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**.",
+        ]
+        if evidence_parts:
+            lines += ["", "**Voz do cliente da unidade**", md_join(evidence_parts)]
+        if network_parts:
+            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        lines += [
+            "",
+            "**Recomendação executiva**",
+            "O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é atacar 2 ou 3 prioridades da unidade, medir semanalmente e comparar com o comportamento da rede para separar falha local de problema estrutural.",
+        ]
+        return md_join(lines)
 
     if any(x in q for x in ["maior diferencial", "diferencial", "pontos fortes"]):
-        bullets = []
-        network_parts = []
+        bullets: List[str] = []
+        network_parts: List[str] = []
         for _, row in strengths.head(3).iterrows():
             tp = row["touchpoint"]
             bullets.append(
@@ -711,38 +705,31 @@ O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é ata
                     f"- Na rede, **{tp}** aparece como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']})."
                 )
         positive_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
-        return (
-            executive_intro()
-            + "
 
-**Diferenciais percebidos na sua unidade**
-"
-            + ("
-".join(bullets) if bullets else "- Não há base suficiente para apontar diferenciais com segurança.")
-            + f"
-
-**Sinais qualitativos**
-As tags positivas mais recorrentes na sua unidade são **{top_tags(compliment_tags)}**."
-            + ("
-
-**Evidências nos comentários**
-" + "
-".join([f'- "{e}"' for e in positive_examples]) if positive_examples else "")
-            + ("
-
-**Comparação com a rede**
-" + "
-".join(network_parts) if network_parts else "")
-            + "
-
-**Conclusão**
-Os diferenciais da unidade devem ser protegidos e, quando também aparecem fortes na rede, podem ser tratados como boas práticas replicáveis."
-        )
+        lines = [
+            executive_intro(),
+            "",
+            "**Diferenciais percebidos na sua unidade**",
+            md_join(bullets) if bullets else "- Não há base suficiente para apontar diferenciais com segurança.",
+            "",
+            "**Sinais qualitativos**",
+            f"As tags positivas mais recorrentes na sua unidade são **{top_tags(compliment_tags)}**.",
+        ]
+        if positive_examples:
+            lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in positive_examples])]
+        if network_parts:
+            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        lines += [
+            "",
+            "**Conclusão**",
+            "Os diferenciais da unidade devem ser protegidos e, quando também aparecem fortes na rede, podem ser tratados como boas práticas replicáveis.",
+        ]
+        return md_join(lines)
 
     if any(x in q for x in ["3 maiores problemas", "três maiores problemas", "maiores problemas"]):
-        bullets = []
-        evidence_parts = []
-        network_parts = []
+        bullets: List[str] = []
+        evidence_parts: List[str] = []
+        network_parts: List[str] = []
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
             bullets.append(
@@ -750,114 +737,93 @@ Os diferenciais da unidade devem ser protegidos e, quando também aparecem forte
             )
             examples = examples_for_touchpoint(tp, "Detrator", 1)
             if examples:
-                evidence_parts.append(f"- Em **{tp}**, clientes da unidade descrevem situações como: \"{examples[0]}\"")
+                evidence_parts.append(f"- Em **{tp}**, clientes da unidade descrevem situações como: \"{examples[0]}\".")
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
                 network_parts.append(f"- **{tp}** na rede: **{var_row['variability_type']}**.")
-        return (
-            executive_intro()
-            + "
 
-**Os 3 maiores problemas da sua unidade agora**
-"
-            + ("
-".join(bullets) if bullets else "- Não há base suficiente para apontar os 3 maiores problemas com segurança.")
-            + f"
-
-**Sinais dos comentários e tags**
-As reclamações mais recorrentes são **{top_tags(complaint_tags)}**. As sugestões mais frequentes são **{top_tags(suggestion_tags)}**."
-            + ("
-
-**Evidências nos comentários**
-" + "
-".join(evidence_parts) if evidence_parts else "")
-            + ("
-
-**Comparação com a rede**
-" + "
-".join(network_parts) if network_parts else "")
-            + "
-
-**Recomendação executiva**
-Monte plano de ação da unidade com dono, prazo e acompanhamento semanal para esses 3 temas. Onde a rede mostrar alta variabilidade, trate como disciplina de execução local; onde o padrão for estrutural, escale o tema."
-        )
+        lines = [
+            executive_intro(),
+            "",
+            "**Os 3 maiores problemas da sua unidade agora**",
+            md_join(bullets) if bullets else "- Não há base suficiente para apontar os 3 maiores problemas com segurança.",
+            "",
+            "**Sinais dos comentários e tags**",
+            f"As reclamações mais recorrentes são **{top_tags(complaint_tags)}**. As sugestões mais frequentes são **{top_tags(suggestion_tags)}**.",
+        ]
+        if evidence_parts:
+            lines += ["", "**Evidências nos comentários**", md_join(evidence_parts)]
+        if network_parts:
+            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        lines += [
+            "",
+            "**Recomendação executiva**",
+            "Monte plano de ação da unidade com dono, prazo e acompanhamento semanal para esses 3 temas. Onde a rede mostrar alta variabilidade, trate como disciplina de execução local; onde o padrão for estrutural, escale o tema.",
+        ]
+        return md_join(lines)
 
     if any(x in q for x in ["por que meu nps caiu", "porque meu nps caiu", "queda do nps"]):
-        if len(weekly) < 2:
-            return executive_intro() + "
+        if weekly is None or len(weekly) < 2:
+            return md_join([executive_intro(), "", "Ainda não há períodos suficientes para explicar queda de NPS com segurança."])
 
-Ainda não há períodos suficientes para explicar queda de NPS com segurança."
         last_weeks = weekly.tail(4).copy()
         weeks_lines = [f"- **{r['week']}**: NPS **{r['nps']}** com **{int(r['respostas'])}** respostas" for _, r in last_weeks.iterrows()]
         recent_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Detrator", limit=2)
-        touch_text = []
+        touch_text: List[str] = []
         for _, row in priorities.head(3).iterrows():
             touch_text.append(f"- **{row['touchpoint']}** segue entre os touchpoints mais sensíveis para explicar piora de percepção na sua unidade.")
-        if delta is not None and pd.notna(delta) and delta < 0:
-            return (
-                executive_intro()
-                + f"
 
-**Queda recente identificada na unidade**
-Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes."
-                + "
+        if pd.notna(delta) and delta < 0:
+            lines = [
+                executive_intro(),
+                "",
+                f"**Queda recente identificada na unidade**
+Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.",
+                "",
+                "**Evolução recente**",
+                md_join(weeks_lines),
+                "",
+                "**Hipótese principal**",
+                f"A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**.",
+                "",
+                "**Onde olhar primeiro**",
+                md_join(touch_text),
+            ]
+            if recent_examples:
+                lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in recent_examples])]
+            lines += [
+                "",
+                "**Comparação com a rede**",
+                "Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo.",
+            ]
+            return md_join(lines)
 
-**Evolução recente**
-"
-                + "
-".join(weeks_lines)
-                + f"
+        return md_join([
+            executive_intro(),
+            "",
+            "**Leitura temporal**",
+            "Não identifiquei uma queda recente clara no NPS da sua unidade.",
+            "",
+            "**Evolução recente**",
+            md_join(weeks_lines),
+        ])
 
-**Hipótese principal**
-A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**."
-                + "
-
-**Onde olhar primeiro**
-"
-                + "
-".join(touch_text)
-                + ("
-
-**Evidências nos comentários**
-" + "
-".join([f'- "{e}"' for e in recent_examples]) if recent_examples else "")
-                + "
-
-**Comparação com a rede**
-Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo."
-            )
-        return executive_intro() + "
-
-**Leitura temporal**
-Não identifiquei uma queda recente clara no NPS da sua unidade.
-
-**Evolução recente**
-" + "
-".join(weeks_lines)
-
-    return (
-        executive_intro()
-        + f"
-
-**Leitura inicial da unidade**
-Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**."
-        + "
-
-**Perguntas que o MVP já responde melhor para o gerente**
-"
-        + "- Quais são os maiores pontos de atenção da minha unidade?
-"
-        + "- O que fazer para melhorar o NPS da minha unidade?
-"
-        + "- Qual é o maior diferencial da minha unidade?
-"
-        + "- Quais são os 3 maiores problemas da minha unidade?
-"
-        + "- Por que o NPS da minha unidade caiu?"
-    )
+    return md_join([
+        executive_intro(),
+        "",
+        "**Leitura inicial da unidade**",
+        f"Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.",
+        "",
+        "**Perguntas que o MVP já responde melhor para o gerente**",
+        "- Quais são os maiores pontos de atenção da minha unidade?",
+        "- O que fazer para melhorar o NPS da minha unidade?",
+        "- Qual é o maior diferencial da minha unidade?",
+        "- Quais são os 3 maiores problemas da minha unidade?",
+        "- Por que o NPS da minha unidade caiu?",
+    ])
 
 
-def load_file(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:
+def load_file(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:
     name = uploaded_file.name.lower()
     if name.endswith(".csv"):
         return pd.read_csv(uploaded_file)
