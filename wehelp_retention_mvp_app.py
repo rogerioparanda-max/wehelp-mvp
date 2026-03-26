@@ -497,26 +497,49 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         problem_text = ""
         if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
             problem_text = (
-                f"\n\n**Impacto de problema reportado**\n"
-                f"- NPS com problema: **{problems['nps_problem']}**\n"
-                f"- NPS sem problema: **{problems['nps_no_problem']}**\n"
+                f"
+
+**Impacto de problema reportado**
+"
+                f"- NPS com problema: **{problems['nps_problem']}**
+"
+                f"- NPS sem problema: **{problems['nps_no_problem']}**
+"
                 f"- Clientes com problema reportado: **{problems['pct_problem']}%**"
             )
 
         comments_text = ""
         if evidence_parts:
-            comments_text = "\n\n**Evidências nos comentários**\n" + "\n".join(evidence_parts)
+            comments_text = "
+
+**Evidências nos comentários**
+" + "
+".join(evidence_parts)
 
         return (
-            f"**Diagnóstico geral**\n"
-            f"Seu NPS está em **{overall_nps}**, na **{zone}**, com diferença de **{benchmark_gap}** pontos versus o benchmark.\n\n"
-            f"**Maiores pontos de atenção**\n"
-            + "\n".join(bullets)
-            + f"\n\n**Leitura executiva**\n{evidence_text}.\n\n"
-            f"**Causa raiz mais provável**\nAs tags de reclamação mais recorrentes hoje são: **{top_tags(complaint_tags)}**."
+            f"**Diagnóstico geral**
+"
+            f"Seu NPS está em **{overall_nps}**, na **{zone}**, com diferença de **{benchmark_gap}** pontos versus o benchmark.
+
+"
+            f"**Maiores pontos de atenção**
+"
+            + "
+".join(bullets)
+            + f"
+
+**Leitura executiva**
+{evidence_text}.
+
+"
+            f"**Causa raiz mais provável**
+As tags de reclamação mais recorrentes hoje são: **{top_tags(complaint_tags)}**."
             + comments_text
             + problem_text
-            + "\n\n**O que isso significa**\nSeu principal desafio não parece ser percepção geral da marca, e sim fricções operacionais concentradas em alavancas que influenciam diretamente a formação de promotores e detratores."
+            + "
+
+**O que isso significa**
+Seu principal desafio não parece ser percepção geral da marca, e sim fricções operacionais concentradas em alavancas que influenciam diretamente a formação de promotores e detratores."
         )
 
     if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
@@ -545,17 +568,36 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 
         comments_text = ""
         if evidence_parts:
-            comments_text = "\n\n**O que os clientes estão dizendo**\n" + "\n".join(evidence_parts)
+            comments_text = "
+
+**O que os clientes estão dizendo**
+" + "
+".join(evidence_parts)
 
         return (
-            f"**Diagnóstico**\nSeu NPS atual é **{overall_nps}** e está na **{zone}**. Para subir esse indicador, eu priorizaria ações em três níveis.\n\n"
-            f"**1. Alavancas estruturais**\n"
-            + "\n".join(actions)
-            + f"\n\n**2. Foco operacional**\n"
-            + ("\n".join(focused_actions) if focused_actions else "- Ainda não há segmentação suficiente para apontar onde concentrar a execução.")
-            + f"\n\n**3. Escuta qualitativa**\nUse as reclamações mais recorrentes para direcionar os planos de ação. Hoje os temas mais citados são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**."
+            f"**Diagnóstico**
+Seu NPS atual é **{overall_nps}** e está na **{zone}**. Para subir esse indicador, eu priorizaria ações em três níveis.
+
+"
+            f"**1. Alavancas estruturais**
+"
+            + "
+".join(actions)
+            + f"
+
+**2. Foco operacional**
+"
+            + ("
+".join(focused_actions) if focused_actions else "- Ainda não há segmentação suficiente para apontar onde concentrar a execução.")
+            + f"
+
+**3. Escuta qualitativa**
+Use as reclamações mais recorrentes para direcionar os planos de ação. Hoje os temas mais citados são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**."
             + comments_text
-            + "\n\n**Recomendação final**\nNão tente melhorar tudo ao mesmo tempo. Escolha os 2 ou 3 touchpoints com maior prioridade, concentre a execução neles e acompanhe a mudança por unidade, período e tipo de plano."
+            + "
+
+**Recomendação final**
+Não tente melhorar tudo ao mesmo tempo. Escolha os 2 ou 3 touchpoints com maior prioridade, concentre a execução neles e acompanhe a mudança por unidade, período e tipo de plano."
         )
 
     if any(x in q for x in ["maior diferencial", "diferencial", "pontos fortes"]):
@@ -576,16 +618,34 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         positive_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
         positive_text = ""
         if positive_examples:
-            positive_text = "\n\n**Evidências nos comentários**\n" + "\n".join([f"- \"{e}\"" for e in positive_examples])
+            positive_text = "
+
+**Evidências nos comentários**
+" + "
+".join([f"- \"{e}\"" for e in positive_examples])
 
         return (
-            f"**Diagnóstico**\nSeu maior diferencial hoje está menos na média geral e mais em alguns atributos da experiência que realmente ajudam a formar promotores.\n\n"
-            f"**Principais diferenciais percebidos**\n"
-            + "\n".join(bullets)
-            + f"\n\n**Sinais qualitativos**\nAs tags positivas mais recorrentes são: **{top_tags(compliment_tags)}**.\n\n"
-            f"**Onde isso aparece com mais força**\n{extra_text}."
+            f"**Diagnóstico**
+Seu maior diferencial hoje está menos na média geral e mais em alguns atributos da experiência que realmente ajudam a formar promotores.
+
+"
+            f"**Principais diferenciais percebidos**
+"
+            + "
+".join(bullets)
+            + f"
+
+**Sinais qualitativos**
+As tags positivas mais recorrentes são: **{top_tags(compliment_tags)}**.
+
+"
+            f"**Onde isso aparece com mais força**
+{extra_text}."
             + positive_text
-            + "\n\n**Leitura executiva**\nO seu diferencial competitivo percebido está nos pontos em que a experiência combina boa avaliação com forte influência sobre a probabilidade de o cliente virar promotor."
+            + "
+
+**Leitura executiva**
+O seu diferencial competitivo percebido está nos pontos em que a experiência combina boa avaliação com forte influência sobre a probabilidade de o cliente virar promotor."
         )
 
     if any(x in q for x in ["3 maiores problemas", "três maiores problemas", "maiores problemas"]):
@@ -602,15 +662,30 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 
         comments_text = ""
         if evidence_parts:
-            comments_text = "\n\n**Evidências nos comentários**\n" + "\n".join(evidence_parts)
+            comments_text = "
+
+**Evidências nos comentários**
+" + "
+".join(evidence_parts)
 
         return (
-            f"**Os 3 maiores problemas para resolver agora**\n"
-            + "\n".join(bullets)
-            + "\n\n**Por que estes 3?**\nEles unem duas coisas ao mesmo tempo: desempenho abaixo do ideal e forte influência na formação de promotores e detratores."
-            + f"\n\n**Sinais dos comentários e tags**\nAs reclamações mais recorrentes hoje são: **{top_tags(complaint_tags)}**. As sugestões mais frequentes são: **{top_tags(suggestion_tags)}**."
+            f"**Os 3 maiores problemas para resolver agora**
+"
+            + "
+".join(bullets)
+            + "
+
+**Por que estes 3?**
+Eles unem duas coisas ao mesmo tempo: desempenho abaixo do ideal e forte influência na formação de promotores e detratores."
+            + f"
+
+**Sinais dos comentários e tags**
+As reclamações mais recorrentes hoje são: **{top_tags(complaint_tags)}**. As sugestões mais frequentes são: **{top_tags(suggestion_tags)}**."
             + comments_text
-            + "\n\n**Recomendação prática**\nMonte planos de ação com dono, prazo e acompanhamento semanal para esses 3 temas antes de dispersar energia em temas secundários."
+            + "
+
+**Recomendação prática**
+Monte planos de ação com dono, prazo e acompanhamento semanal para esses 3 temas antes de dispersar energia em temas secundários."
         )
 
     if any(x in q for x in ["por que meu nps caiu", "porque meu nps caiu", "queda do nps"]):
@@ -627,35 +702,70 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         recent_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Detrator", limit=2)
         recent_text = ""
         if recent_examples:
-            recent_text = "\n\n**Evidências nos comentários**\n" + "\n".join([f"- \"{e}\"" for e in recent_examples])
+            recent_text = "
+
+**Evidências nos comentários**
+" + "
+".join([f"- \"{e}\"" for e in recent_examples])
 
         if delta is not None and pd.notna(delta) and delta < 0:
             return (
-                f"**Queda recente identificada**\n"
-                f"Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.\n\n"
-                f"**Evolução recente**\n"
-                + "\n".join(weeks_lines)
-                + f"\n\n**Hipótese principal**\nA queda não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente: **{top_tags(complaint_tags)}**.\n\n"
-                + "**Onde olhar primeiro**\n"
-                + "\n".join(touch_text)
+                f"**Queda recente identificada**
+"
+                f"Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.
+
+"
+                f"**Evolução recente**
+"
+                + "
+".join(weeks_lines)
+                + f"
+
+**Hipótese principal**
+A queda não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente: **{top_tags(complaint_tags)}**.
+
+"
+                + "**Onde olhar primeiro**
+"
+                + "
+".join(touch_text)
                 + recent_text
-                + "\n\n**Próximo passo recomendado**\nComparar a última semana com a anterior por unidade, período, tipo de plano e nome do plano para localizar exatamente onde a queda se concentrou."
+                + "
+
+**Próximo passo recomendado**
+Comparar a última semana com a anterior por unidade, período, tipo de plano e nome do plano para localizar exatamente onde a queda se concentrou."
             )
 
         return (
-            f"**Leitura temporal**\nNão identifiquei uma queda recente clara no NPS.\n\n"
-            f"**Evolução recente**\n"
-            + "\n".join(weeks_lines)
+            f"**Leitura temporal**
+Não identifiquei uma queda recente clara no NPS.
+
+"
+            f"**Evolução recente**
+"
+            + "
+".join(weeks_lines)
         )
 
     return (
-        f"**Resumo executivo**\nSeu NPS geral está em **{overall_nps}** e a classificação atual é **{zone}**.\n\n"
-        f"**Leitura inicial**\nOs principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.\n\n"
-        f"**Perguntas que o MVP já responde melhor**\n"
-        f"- Quais são os maiores pontos de atenção?\n"
-        f"- O que fazer para melhorar meu NPS?\n"
-        f"- Qual é meu maior diferencial?\n"
-        f"- Quais são os 3 maiores problemas?\n"
+        f"**Resumo executivo**
+Seu NPS geral está em **{overall_nps}** e a classificação atual é **{zone}**.
+
+"
+        f"**Leitura inicial**
+Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.
+
+"
+        f"**Perguntas que o MVP já responde melhor**
+"
+        f"- Quais são os maiores pontos de atenção?
+"
+        f"- O que fazer para melhorar meu NPS?
+"
+        f"- Qual é meu maior diferencial?
+"
+        f"- Quais são os 3 maiores problemas?
+"
         f"- Por que meu NPS caiu?"
     )
 
