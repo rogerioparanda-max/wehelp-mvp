@@ -596,9 +596,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         problem_text = ""
         if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
             problem_text = (
-                f"
-
-**Impacto do problema reportado na unidade**
+                f"""**Impacto do problema reportado na unidade**
 "
                 f"- NPS com problema: **{problems['nps_problem']}**
 "
@@ -615,13 +613,9 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 "
             + ("
 ".join(bullets) if bullets else "- Não há base suficiente para apontar prioridades com segurança.")
-            + f"
-
-**Onde a sua operação está mais pressionada**
+            + f"""**Onde a sua operação está mais pressionada**
 {evidence_text}."
-            + f"
-
-**Leitura de causa raiz**
+            + f"""**Leitura de causa raiz**
 As tags de reclamação mais recorrentes na sua unidade são **{top_tags(complaint_tags)}**."
             + ("
 
