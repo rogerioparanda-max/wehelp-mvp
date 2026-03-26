@@ -6,20 +6,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-
 st.set_page_config(page_title="WeHelp Retention MVP", layout="wide")
 
-# MVP note:
-# The primary user is a unit manager. The app should answer from the selected unit's perspective
-# and compare that unit against the overall network whenever possible.
 
-
-# -----------------------------
-# Helpers
-# -----------------------------
-
-def normalize_text(value: str) -> str:
-    if value is None:
+def normalize_text(value) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
     return str(value).strip()
 
@@ -28,7 +19,7 @@ def to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce")
 
 
-def classify_nps(score: float) -> str:
+def classify_nps(score) -> str:
     if pd.isna(score):
         return "Sem nota"
     if score >= 9:
@@ -44,7 +35,7 @@ def nps_score(series: pd.Series) -> float:
         return np.nan
     promoters = (vals >= 9).mean() * 100
     detractors = (vals <= 6).mean() * 100
-    return promoters - detractors
+    return round(promoters - detractors, 1)
 
 
 def nps_zone(nps: float) -> str:
@@ -107,22 +98,6 @@ def safe_bool_text(v) -> str:
     return normalize_text(v) if normalize_text(v) else "Não informado"
 
 
-def extract_type_and_phrases(text: str) -> List[Tuple[str, str]]:
-    if not text or pd.isna(text):
-        return []
-    chunks = []
-    for raw_line in str(text).splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        match = re.match(r"^(COMPLIMENT|COMPLAINT|SUGGESTION)\s*:\s*(.*)$", line, flags=re.I)
-        if match:
-            chunks.append((match.group(1).upper(), match.group(2).strip()))
-        else:
-            chunks.append(("UNKNOWN", line))
-    return chunks
-
-
 def odds_ratio_topbox(df: pd.DataFrame, col: str) -> float:
     temp = df[["nps_class", col]].copy()
     temp[col] = pd.to_numeric(temp[col], errors="coerce")
@@ -130,20 +105,20 @@ def odds_ratio_topbox(df: pd.DataFrame, col: str) -> float:
     if temp.empty:
         return np.nan
     temp["top_box"] = temp[col] >= 9
-
     promo = temp[temp["nps_class"] == "Promotor"]
     detra = temp[temp["nps_class"] == "Detrator"]
     if promo.empty or detra.empty:
         return np.nan
-
     a = promo["top_box"].sum()
     b = (~promo["top_box"]).sum()
     c = detra["top_box"].sum()
     d = (~detra["top_box"]).sum()
-
-    # Haldane-Anscombe correction for zeros
     a, b, c, d = [x + 0.5 for x in (a, b, c, d)]
-    return (a / b) / (c / d)
+    return round((a / b) / (c / d), 2)
+
+
+def md_join(lines: List[str]) -> str:
+    return "\n".join([str(x) for x in lines if str(x).strip()])
 
 
 @dataclass
@@ -167,23 +142,10 @@ class Schema:
     tag_cols: List[str]
 
 
-DEFAULT_BENCHMARK = 50.0
-
-
-# -----------------------------
-# Schema detection
-# -----------------------------
-
 def detect_schema(df: pd.DataFrame) -> Schema:
     cols = list(df.columns)
-
-    # Touchpoints
     touch_eval = [c for c in cols if str(c).endswith(" Evaluation")]
     touch_comment = [c for c in cols if str(c).endswith(" Comment")]
-
-    # Tags now start from column AR (user update)
-    # We'll take everything AFTER the last known column block as tags
-    # Safer: exclude known columns and treat the rest as tags
     known_non_tag = {
         "Internal Code", "Name", "Phone", "Email", "Document",
         "Person Created At", "Date Of Birth", "Gender",
@@ -198,9 +160,7 @@ def detect_schema(df: pd.DataFrame) -> Schema:
     }
     known_non_tag.update(touch_eval)
     known_non_tag.update(touch_comment)
-
     tag_cols = [c for c in cols if c not in known_non_tag]
-
     return Schema(
         nps="Evaluation",
         nps_comment="Nps Comment" if "Nps Comment" in cols else None,
@@ -208,7 +168,6 @@ def detect_schema(df: pd.DataFrame) -> Schema:
         response_unit="Response Company Unit Name" if "Response Company Unit Name" in cols else None,
         birth_date="Date Of Birth" if "Date Of Birth" in cols else None,
         gender="Gender" if "Gender" in cols else None,
-        # IMPORTANT UPDATE: Person Created At is the start date (tenure)
         signup_date="Person Created At" if "Person Created At" in cols else None,
         frequency_date="Frequency Date" if "Frequency Date" in cols else None,
         plan_type="Tipo do Plano" if "Tipo do Plano" in cols else None,
@@ -223,13 +182,8 @@ def detect_schema(df: pd.DataFrame) -> Schema:
     )
 
 
-# -----------------------------
-# Preparation
-# -----------------------------
-
 def prepare_dataframe(df: pd.DataFrame, schema: Schema) -> pd.DataFrame:
     data = df.copy()
-
     data[schema.nps] = pd.to_numeric(data[schema.nps], errors="coerce")
     data["nps_class"] = data[schema.nps].apply(classify_nps)
 
@@ -260,49 +214,22 @@ def prepare_dataframe(df: pd.DataFrame, schema: Schema) -> pd.DataFrame:
         data["period"] = "Sem horário"
         data["week"] = "Sem semana"
 
-    if schema.gender:
-        data["gender_clean"] = data[schema.gender].fillna("Sem gênero").astype(str).str.strip()
-    else:
-        data["gender_clean"] = "Sem gênero"
-
-    if schema.plan_type:
-        data["plan_type_clean"] = data[schema.plan_type].fillna("Sem tipo de plano").astype(str).str.strip()
-    else:
-        data["plan_type_clean"] = "Sem tipo de plano"
-
-    if schema.plan_name:
-        data["plan_name_clean"] = data[schema.plan_name].fillna("Sem nome de plano").astype(str).str.strip()
-    else:
-        data["plan_name_clean"] = "Sem nome de plano"
+    data["gender_clean"] = data[schema.gender].fillna("Sem gênero").astype(str).str.strip() if schema.gender else "Sem gênero"
+    data["plan_type_clean"] = data[schema.plan_type].fillna("Sem tipo de plano").astype(str).str.strip() if schema.plan_type else "Sem tipo de plano"
+    data["plan_name_clean"] = data[schema.plan_name].fillna("Sem nome de plano").astype(str).str.strip() if schema.plan_name else "Sem nome de plano"
 
     unit_col = schema.response_unit or schema.unit
     data["unit_clean"] = data[unit_col].fillna(data[schema.unit]).fillna("Sem unidade").astype(str).str.strip()
-
-    if schema.had_problem:
-        data["had_problem_clean"] = data[schema.had_problem].apply(safe_bool_text)
-    else:
-        data["had_problem_clean"] = "Não informado"
-
-    if schema.solved_problem:
-        data["solved_problem_clean"] = data[schema.solved_problem].apply(safe_bool_text)
-    else:
-        data["solved_problem_clean"] = "Não informado"
-
+    data["had_problem_clean"] = data[schema.had_problem].apply(safe_bool_text) if schema.had_problem else "Não informado"
+    data["solved_problem_clean"] = data[schema.solved_problem].apply(safe_bool_text) if schema.solved_problem else "Não informado"
     return data
 
 
-# -----------------------------
-# Metrics
-# -----------------------------
-
 def segment_nps(data: pd.DataFrame, segment_col: str) -> pd.DataFrame:
-    summary = (
-        data.groupby(segment_col, dropna=False)["Evaluation"]
-        .agg(respostas="count", nps=nps_score)
-        .reset_index()
-        .sort_values("nps", ascending=False)
-    )
-    return summary
+    rows = []
+    for key, grp in data.groupby(segment_col, dropna=False):
+        rows.append({segment_col: key, "respostas": int(len(grp)), "nps": nps_score(grp["Evaluation"])})
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=[segment_col, "respostas", "nps"])
 
 
 def touchpoint_summary(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
@@ -311,20 +238,22 @@ def touchpoint_summary(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
         name = col.replace(" Evaluation", "")
         vals = pd.to_numeric(data[col], errors="coerce")
         valid = vals.notna()
-        row = {
+        if not valid.any():
+            continue
+        nps_tp = nps_score(vals)
+        odds = odds_ratio_topbox(data, col)
+        priority_index = ((100 - nps_tp) * np.log1p(odds)) if pd.notna(nps_tp) and pd.notna(odds) else np.nan
+        rows.append({
             "touchpoint": name,
             "respostas": int(valid.sum()),
-            "media": round(vals.mean(), 2) if valid.any() else np.nan,
-            "nps_touchpoint": round(nps_score(vals), 1) if valid.any() else np.nan,
-            "odds_ratio": round(odds_ratio_topbox(data, col), 2) if valid.any() else np.nan,
-        }
-        if pd.notna(row["nps_touchpoint"]) and pd.notna(row["odds_ratio"]):
-            # Lower NPS + higher OR = higher priority
-            row["priority_index"] = round((100 - row["nps_touchpoint"]) * np.log1p(row["odds_ratio"]), 2)
-        else:
-            row["priority_index"] = np.nan
-        rows.append(row)
-    return pd.DataFrame(rows).sort_values(["priority_index", "odds_ratio"], ascending=[False, False])
+            "media": round(vals.mean(), 2),
+            "nps_touchpoint": nps_tp,
+            "odds_ratio": odds,
+            "priority_index": round(priority_index, 2) if pd.notna(priority_index) else np.nan,
+        })
+    if not rows:
+        return pd.DataFrame(columns=["touchpoint", "respostas", "media", "nps_touchpoint", "odds_ratio", "priority_index"])
+    return pd.DataFrame(rows).sort_values(["priority_index", "odds_ratio"], ascending=[False, False], na_position="last")
 
 
 def problem_summary(data: pd.DataFrame) -> Dict[str, float]:
@@ -332,10 +261,26 @@ def problem_summary(data: pd.DataFrame) -> Dict[str, float]:
     problem_no = data[data["had_problem_clean"].str.lower() == "não"]
     return {
         "pct_problem": round((len(problem_yes) / len(data)) * 100, 1) if len(data) else np.nan,
-        "nps_problem": round(nps_score(problem_yes["Evaluation"]), 1) if len(problem_yes) else np.nan,
-        "nps_no_problem": round(nps_score(problem_no["Evaluation"]), 1) if len(problem_no) else np.nan,
+        "nps_problem": nps_score(problem_yes["Evaluation"]) if len(problem_yes) else np.nan,
+        "nps_no_problem": nps_score(problem_no["Evaluation"]) if len(problem_no) else np.nan,
         "problem_count": int(len(problem_yes)),
     }
+
+
+def extract_type_and_phrases(text: str) -> List[Tuple[str, str]]:
+    if not text or pd.isna(text):
+        return []
+    chunks = []
+    for raw_line in str(text).splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(COMPLIMENT|COMPLAINT|SUGGESTION)\s*:\s*(.*)$", line, flags=re.I)
+        if match:
+            chunks.append((match.group(1).upper(), match.group(2).strip()))
+        else:
+            chunks.append(("UNKNOWN", line))
+    return chunks
 
 
 def tag_summary(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
@@ -350,37 +295,53 @@ def tag_summary(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["tag", "kind", "count"])
     tags = pd.DataFrame(rows)
-    summary = tags.groupby(["tag", "kind"]).size().reset_index(name="count").sort_values("count", ascending=False)
-    return summary
+    return tags.groupby(["tag", "kind"]).size().reset_index(name="count").sort_values("count", ascending=False)
 
 
-def top_comment_themes(data: pd.DataFrame, schema: Schema, n: int = 10) -> pd.DataFrame:
+def collect_comment_evidence(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
     rows = []
-    all_text_cols = [c for c in [schema.nps_comment, schema.problem_comment] if c]
-    all_text_cols += schema.touchpoint_comment_cols
-
-    for col in all_text_cols:
-        if col not in data.columns:
-            continue
-        col_name = col.replace(" Comment", "")
+    text_cols = []
+    if schema.nps_comment and schema.nps_comment in data.columns:
+        text_cols.append((schema.nps_comment, "NPS geral"))
+    if schema.problem_comment and schema.problem_comment in data.columns:
+        text_cols.append((schema.problem_comment, "Problema reportado"))
+    for col in schema.touchpoint_comment_cols:
+        if col in data.columns:
+            text_cols.append((col, col.replace(" Comment", "")))
+    for col, source_name in text_cols:
         subset = data[["nps_class", col]].dropna()
         for _, row in subset.iterrows():
             text = normalize_text(row[col])
             if text:
-                rows.append({"source": col_name, "nps_class": row["nps_class"], "text": text})
-
-    if not rows:
-        return pd.DataFrame(columns=["source", "nps_class", "count"])
-
-    comments = pd.DataFrame(rows)
-    comments["source"] = comments["source"].str.strip()
-    summary = comments.groupby(["source", "nps_class"]).size().reset_index(name="count").sort_values("count", ascending=False)
-    return summary.head(n)
+                rows.append({"source": source_name, "nps_class": row["nps_class"], "text": text})
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["source", "nps_class", "text"])
 
 
-# -----------------------------
-# Insight engine
-# -----------------------------
+def find_comment_examples(comment_df: pd.DataFrame, touchpoint: Optional[str] = None, nps_class: Optional[str] = None, limit: int = 2) -> List[str]:
+    if comment_df is None or comment_df.empty:
+        return []
+    temp = comment_df.copy()
+    if touchpoint:
+        tp = str(touchpoint).strip().lower()
+        temp = temp[temp["source"].astype(str).str.strip().str.lower() == tp]
+    if nps_class:
+        temp = temp[temp["nps_class"] == nps_class]
+    if temp.empty:
+        return []
+    examples, seen = [], set()
+    for text in temp["text"].astype(str):
+        clean = re.sub(r"\s+", " ", text).strip()
+        if not clean:
+            continue
+        short = clean[:180] + ("..." if len(clean) > 180 else "")
+        key = short.lower()
+        if key not in seen:
+            seen.add(key)
+            examples.append(short)
+        if len(examples) >= limit:
+            break
+    return examples
+
 
 def classify_touchpoint_bucket(nps_touchpoint: float, odds_ratio: float) -> str:
     if pd.isna(nps_touchpoint) or pd.isna(odds_ratio):
@@ -396,16 +357,9 @@ def classify_touchpoint_bucket(nps_touchpoint: float, odds_ratio: float) -> str:
 
 def touchpoint_network_variability(data: pd.DataFrame, schema: Schema) -> pd.DataFrame:
     rows = []
-    if "unit_clean" not in data.columns:
-        return pd.DataFrame(columns=["touchpoint", "units", "mean_nps", "std_nps", "mean_odds", "best_unit", "worst_unit", "variability_type"])
-
     for col in schema.touchpoint_eval_cols:
         tp = col.replace(" Evaluation", "")
-        per_unit = (
-            data.groupby("unit_clean")[col]
-            .apply(lambda s: nps_score(pd.to_numeric(s, errors="coerce")))
-            .reset_index(name="nps_touchpoint")
-        )
+        per_unit = data.groupby("unit_clean")[col].apply(lambda s: nps_score(pd.to_numeric(s, errors="coerce"))).reset_index(name="nps_touchpoint")
         per_unit = per_unit[pd.notna(per_unit["nps_touchpoint"])]
         if per_unit.empty:
             continue
@@ -425,88 +379,61 @@ def touchpoint_network_variability(data: pd.DataFrame, schema: Schema) -> pd.Dat
         rows.append({
             "touchpoint": tp,
             "units": int(len(per_unit)),
-            "mean_nps": round(mean_nps, 1) if pd.notna(mean_nps) else np.nan,
+            "mean_nps": round(mean_nps, 1),
             "std_nps": round(std_nps, 1) if pd.notna(std_nps) else np.nan,
-            "mean_odds": round(odds, 2) if pd.notna(odds) else np.nan,
+            "mean_odds": odds,
             "best_unit": best_row["unit_clean"],
             "best_nps": round(best_row["nps_touchpoint"], 1),
             "worst_unit": worst_row["unit_clean"],
             "worst_nps": round(worst_row["nps_touchpoint"], 1),
             "variability_type": variability_type,
         })
-    return pd.DataFrame(rows).sort_values(["std_nps", "mean_odds"], ascending=[False, False]) if rows else pd.DataFrame(columns=["touchpoint", "units", "mean_nps", "std_nps", "mean_odds", "best_unit", "worst_unit", "variability_type"])
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
 def build_insights(data: pd.DataFrame, schema: Schema, benchmark: float, selected_unit: Optional[str] = None) -> Dict[str, object]:
     network_data = data.copy()
-    if selected_unit and selected_unit != "Todas as unidades":
-        unit_data = data[data["unit_clean"] == selected_unit].copy()
-    else:
-        unit_data = data.copy()
-        selected_unit = "Todas as unidades"
+    unit_data = data[data["unit_clean"] == selected_unit].copy() if selected_unit and selected_unit != "Todas as unidades" else data.copy()
+    selected_unit = selected_unit or "Todas as unidades"
 
-    overall_nps = round(nps_score(unit_data[schema.nps]), 1)
-    zone = nps_zone(overall_nps)
-    network_nps = round(nps_score(network_data[schema.nps]), 1)
-
+    overall_nps = nps_score(unit_data[schema.nps])
+    network_nps = nps_score(network_data[schema.nps])
     touch = touchpoint_summary(unit_data, schema)
     if not touch.empty:
         touch["bucket"] = touch.apply(lambda r: classify_touchpoint_bucket(r["nps_touchpoint"], r["odds_ratio"]), axis=1)
 
-    tags = tag_summary(unit_data, schema)
-    comment_evidence = collect_comment_evidence(unit_data, schema)
-    problems = problem_summary(unit_data)
-    period = segment_nps(unit_data, "period")
-    units = segment_nps(network_data, "unit_clean").sort_values(["respostas", "nps"], ascending=[False, True])
-    weekly = segment_nps(unit_data, "week").sort_values("week")
-    variability = touchpoint_network_variability(network_data, schema)
-
-    top_priorities = touch.sort_values(["priority_index", "odds_ratio"], ascending=[False, False]).head(3).copy() if not touch.empty else pd.DataFrame()
-    top_strengths = touch.sort_values(["nps_touchpoint", "odds_ratio"], ascending=[False, False]).head(3).copy() if not touch.empty else pd.DataFrame()
-
-    complaint_tags = tags[tags["kind"] == "COMPLAINT"].head(10)
-    compliment_tags = tags[tags["kind"] == "COMPLIMENT"].head(10)
-    suggestion_tags = tags[tags["kind"] == "SUGGESTION"].head(10)
-
-    why_fell = None
+    weekly = segment_nps(unit_data, "week")
+    why_fell = np.nan
     if len(weekly) >= 2:
-        recent = weekly.tail(2).copy()
-        recent_values = recent["nps"].tolist()
-        if len(recent_values) == 2 and all(pd.notna(recent_values)):
-            why_fell = recent_values[-1] - recent_values[-2]
+        vals = weekly.tail(2)["nps"].tolist()
+        if len(vals) == 2 and all(pd.notna(vals)):
+            why_fell = vals[-1] - vals[-2]
 
-    selected_unit_nps = overall_nps if selected_unit != "Todas as unidades" else np.nan
-    unit_vs_network_gap = round(selected_unit_nps - network_nps, 1) if selected_unit != "Todas as unidades" and pd.notna(selected_unit_nps) and pd.notna(network_nps) else np.nan
+    unit_vs_network_gap = round(overall_nps - network_nps, 1) if selected_unit != "Todas as unidades" and pd.notna(overall_nps) and pd.notna(network_nps) else np.nan
+    tags = tag_summary(unit_data, schema)
 
     return {
         "selected_unit": selected_unit,
         "overall_nps": overall_nps,
-        "zone": zone,
+        "zone": nps_zone(overall_nps),
         "benchmark_gap": round(overall_nps - benchmark, 1) if pd.notna(overall_nps) else np.nan,
         "network_nps": network_nps,
         "unit_vs_network_gap": unit_vs_network_gap,
         "touchpoints": touch,
-        "comment_evidence": comment_evidence,
-        "network_variability": variability,
-        "problems": problems,
+        "comment_evidence": collect_comment_evidence(unit_data, schema),
+        "network_variability": touchpoint_network_variability(network_data, schema),
+        "problems": problem_summary(unit_data),
         "tags": tags,
-        "complaint_tags": complaint_tags,
-        "compliment_tags": compliment_tags,
-        "suggestion_tags": suggestion_tags,
-        "period": period,
-        "units": units,
+        "complaint_tags": tags[tags["kind"] == "COMPLAINT"].head(10),
+        "compliment_tags": tags[tags["kind"] == "COMPLIMENT"].head(10),
+        "suggestion_tags": tags[tags["kind"] == "SUGGESTION"].head(10),
+        "period": segment_nps(unit_data, "period"),
+        "units": segment_nps(network_data, "unit_clean"),
         "weekly": weekly,
-        "top_priorities": top_priorities,
-        "top_strengths": top_strengths,
+        "top_priorities": touch.head(3).copy() if not touch.empty else pd.DataFrame(),
+        "top_strengths": touch.sort_values(["nps_touchpoint", "odds_ratio"], ascending=[False, False]).head(3).copy() if not touch.empty else pd.DataFrame(),
         "why_fell_delta": why_fell,
     }
-
-
-def format_bullets_from_df(df: pd.DataFrame, label_col: str, value_col: str, max_items: int = 3) -> List[str]:
-    items = []
-    for _, row in df.head(max_items).iterrows():
-        items.append(f"- **{row[label_col]}**: {row[value_col]}")
-    return items
 
 
 def answer_question(question: str, insights: Dict[str, object]) -> str:
@@ -529,16 +456,12 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
     comment_evidence = insights.get("comment_evidence", pd.DataFrame())
     delta = insights.get("why_fell_delta", np.nan)
 
-    def md_join(lines: List[str]) -> str:
-        return "
-".join([str(x) for x in lines if str(x).strip()])
-
     def top_tags(df: pd.DataFrame, max_items: int = 3) -> str:
         if df is None or df.empty:
             return "sem recorrência suficiente nas tags"
         return ", ".join(df["tag"].astype(str).head(max_items).tolist())
 
-    def worst_segment(df: pd.DataFrame, label_col: str) -> Optional[Tuple[str, float, int]]:
+    def worst_segment(df: pd.DataFrame, label_col: str):
         if df is None or df.empty:
             return None
         valid = df[df["respostas"] >= 5].copy()
@@ -548,301 +471,142 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         row = valid.sort_values("nps", ascending=True).iloc[0]
         return row[label_col], row["nps"], row["respostas"]
 
-    def examples_for_touchpoint(touchpoint_name: str, nps_class: str = "Detrator", limit: int = 2) -> List[str]:
-        examples = find_comment_examples(comment_evidence, touchpoint=touchpoint_name, nps_class=nps_class, limit=limit)
-        if not examples:
-            examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class=nps_class, limit=limit)
-        return examples
-
-    def variability_for_touchpoint(tp: str) -> Optional[pd.Series]:
+    def variability_for_touchpoint(tp: str):
         if variability is None or variability.empty:
             return None
         match = variability[variability["touchpoint"].astype(str).str.lower() == str(tp).lower()]
-        if match.empty:
-            return None
-        return match.iloc[0]
+        return match.iloc[0] if not match.empty else None
 
-    def executive_intro() -> str:
-        parts = [
-            "**Leitura executiva da unidade**",
-            f"Unidade analisada: **{selected_unit}**.",
-            f"Seu NPS está em **{overall_nps}**, classificado como **{zone}**.",
-            f"A distância para o benchmark é de **{benchmark_gap}** pontos.",
-        ]
-        if selected_unit != "Todas as unidades" and pd.notna(network_nps):
-            parts.append(f"O NPS geral da rede está em **{network_nps}**.")
-            if pd.notna(unit_vs_network_gap):
-                direction = "acima" if unit_vs_network_gap >= 0 else "abaixo"
-                parts.append(f"A sua unidade está **{abs(unit_vs_network_gap)}** pontos {direction} da média da rede.")
-        return " ".join(parts)
+    def examples_for_touchpoint(tp: str, cls: str = "Detrator", limit: int = 1):
+        ex = find_comment_examples(comment_evidence, touchpoint=tp, nps_class=cls, limit=limit)
+        return ex if ex else find_comment_examples(comment_evidence, touchpoint=None, nps_class=cls, limit=limit)
 
-    if any(x in q for x in ["maiores pontos de atenção", "pontos de atenção", "atenção"]):
-        bullets: List[str] = []
-        evidence_parts: List[str] = []
-        network_parts: List[str] = []
+    intro_parts = [
+        "**Leitura executiva da unidade**",
+        f"Unidade analisada: **{selected_unit}**.",
+        f"Seu NPS está em **{overall_nps}**, classificado como **{zone}**.",
+        f"A distância para o benchmark é de **{benchmark_gap}** pontos.",
+    ]
+    if selected_unit != "Todas as unidades" and pd.notna(network_nps):
+        intro_parts.append(f"O NPS geral da rede está em **{network_nps}**.")
+        if pd.notna(unit_vs_network_gap):
+            direction = "acima" if unit_vs_network_gap >= 0 else "abaixo"
+            intro_parts.append(f"A sua unidade está **{abs(unit_vs_network_gap)}** pontos {direction} da média da rede.")
+    intro = " ".join(intro_parts)
 
+    if "atenção" in q:
+        bullets, evidence_parts, network_parts = [], [], []
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
-            bullets.append(
-                f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**."
-            )
-            examples = examples_for_touchpoint(tp, "Detrator", 1)
-            if examples:
-                evidence_parts.append(f"- Em **{tp}**, clientes da unidade dizem coisas como: \"{examples[0]}\".")
+            bullets.append(f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
+            ex = examples_for_touchpoint(tp)
+            if ex:
+                evidence_parts.append(f'- Em **{tp}**, clientes da unidade dizem coisas como: "{ex[0]}".')
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
-                network_parts.append(
-                    f"- Na rede, **{tp}** se comporta como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']}); pior unidade: **{var_row['worst_unit']}** ({var_row['worst_nps']})."
-                )
-
-        worst_period = worst_segment(period, "period")
-        evidence_text = (
-            f"O período mais pressionado da sua unidade é **{worst_period[0]}** com NPS **{worst_period[1]}**."
-            if worst_period
-            else "Não há base suficiente para apontar um período crítico com segurança."
-        )
-
-        problem_lines: List[str] = []
-        if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
-            problem_lines = [
-                "**Impacto do problema reportado na unidade**",
-                f"- NPS com problema: **{problems['nps_problem']}**",
-                f"- NPS sem problema: **{problems['nps_no_problem']}**",
-                f"- Clientes com problema reportado: **{problems['pct_problem']}%**",
-            ]
-
-        lines = [
-            executive_intro(),
-            "",
-            "**Onde estão os maiores pontos de atenção da sua unidade**",
-            md_join(bullets) if bullets else "- Não há base suficiente para apontar prioridades com segurança.",
-            "",
-            "**Onde a sua operação está mais pressionada**",
-            evidence_text,
-            "",
-            "**Leitura de causa raiz**",
-            f"As tags de reclamação mais recorrentes na sua unidade são **{top_tags(complaint_tags)}**.",
-        ]
+                network_parts.append(f"- Na rede, **{tp}** se comporta como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']}); pior unidade: **{var_row['worst_unit']}** ({var_row['worst_nps']}).")
+        worst = worst_segment(period, "period")
+        evidence_text = f"O período mais pressionado da sua unidade é **{worst[0]}** com NPS **{worst[1]}**." if worst else "Não há base suficiente para apontar um período crítico com segurança."
+        lines = [intro, "", "**Onde estão os maiores pontos de atenção da sua unidade**", md_join(bullets) if bullets else "- Não há base suficiente para apontar prioridades com segurança.", "", "**Onde a sua operação está mais pressionada**", evidence_text, "", "**Leitura de causa raiz**", f"As tags de reclamação mais recorrentes na sua unidade são **{top_tags(complaint_tags)}**."]
         if evidence_parts:
             lines += ["", "**Voz do cliente da unidade**", md_join(evidence_parts)]
         if network_parts:
             lines += ["", "**Comparação com a rede**", md_join(network_parts)]
-        if problem_lines:
-            lines += [""] + problem_lines
-        lines += [
-            "",
-            "**Conclusão**",
-            "O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade hoje, mas sempre comparando com a rede para entender o que é problema local de execução e o que é padrão estrutural.",
-        ]
+        if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
+            lines += ["", "**Impacto do problema reportado na unidade**", f"- NPS com problema: **{problems['nps_problem']}**", f"- NPS sem problema: **{problems['nps_no_problem']}**", f"- Clientes com problema reportado: **{problems['pct_problem']}%**"]
+        lines += ["", "**Conclusão**", "O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade hoje, mas sempre comparando com a rede para entender o que é problema local de execução e o que é padrão estrutural."]
         return md_join(lines)
 
-    if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
-        actions: List[str] = []
-        evidence_parts: List[str] = []
-        network_parts: List[str] = []
-
+    if "melhorar" in q:
+        actions, evidence_parts, network_parts = [], [], []
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
-            actions.append(
-                f"- **{tp}** deve entrar primeiro no plano de ação da sua unidade: ele combina desempenho insuficiente com alto poder de influenciar promotores versus detratores."
-            )
-            examples = examples_for_touchpoint(tp, "Detrator", 1)
-            if examples:
-                evidence_parts.append(f"- Em **{tp}**, os clientes da unidade relatam: \"{examples[0]}\".")
+            actions.append(f"- **{tp}** deve entrar primeiro no plano de ação da sua unidade: ele combina desempenho insuficiente com alto poder de influenciar promotores versus detratores.")
+            ex = examples_for_touchpoint(tp)
+            if ex:
+                evidence_parts.append(f'- Em **{tp}**, os clientes da unidade relatam: "{ex[0]}".')
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
-                network_parts.append(
-                    f"- Na rede, **{tp}** está classificado como **{var_row['variability_type']}**. Isso ajuda a decidir se a ação deve ser local ou se o tema merece escalonamento para a rede."
-                )
-
-        worst_period = worst_segment(period, "period")
-        focused_actions: List[str] = []
-        if worst_period:
-            focused_actions.append(f"- Trate **{worst_period[0]}** como operação prioritária, porque é o período com pior NPS da sua unidade.")
+                network_parts.append(f"- Na rede, **{tp}** está classificado como **{var_row['variability_type']}**. Isso ajuda a decidir se a ação deve ser local ou se o tema merece escalonamento para a rede.")
+        worst = worst_segment(period, "period")
+        focused = []
+        if worst:
+            focused.append(f"- Trate **{worst[0]}** como operação prioritária, porque é o período com pior NPS da sua unidade.")
         if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
-            focused_actions.append(
-                f"- Reforce o fechamento de problemas: na sua unidade, quem reporta problema tem NPS **{problems['nps_problem']}**, contra **{problems['nps_no_problem']}** entre os demais."
-            )
+            focused.append(f"- Reforce o fechamento de problemas: na sua unidade, quem reporta problema tem NPS **{problems['nps_problem']}**, contra **{problems['nps_no_problem']}** entre os demais.")
         if pd.notna(unit_vs_network_gap) and unit_vs_network_gap < 0:
-            focused_actions.append(
-                f"- Sua unidade está abaixo da média da rede em **{abs(unit_vs_network_gap)}** pontos. Priorize execução disciplinada nos touchpoints críticos antes de abrir novas frentes."
-            )
-
-        lines = [
-            executive_intro(),
-            "",
-            "**O que fazer para melhorar o NPS da sua unidade**",
-            md_join(actions) if actions else "- Não há base suficiente para definir prioridades com segurança.",
-            "",
-            "**Onde concentrar a execução do gerente**",
-            md_join(focused_actions) if focused_actions else "- Ainda não há base suficiente para apontar um recorte operacional prioritário.",
-            "",
-            "**Leitura qualitativa da unidade**",
-            f"Os temas mais citados nas reclamações são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**.",
-        ]
+            focused.append(f"- Sua unidade está abaixo da média da rede em **{abs(unit_vs_network_gap)}** pontos. Priorize execução disciplinada nos touchpoints críticos antes de abrir novas frentes.")
+        lines = [intro, "", "**O que fazer para melhorar o NPS da sua unidade**", md_join(actions) if actions else "- Não há base suficiente para definir prioridades com segurança.", "", "**Onde concentrar a execução do gerente**", md_join(focused) if focused else "- Ainda não há base suficiente para apontar um recorte operacional prioritário.", "", "**Leitura qualitativa da unidade**", f"Os temas mais citados nas reclamações são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**."]
         if evidence_parts:
             lines += ["", "**Voz do cliente da unidade**", md_join(evidence_parts)]
         if network_parts:
             lines += ["", "**Comparação com a rede**", md_join(network_parts)]
-        lines += [
-            "",
-            "**Recomendação executiva**",
-            "O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é atacar 2 ou 3 prioridades da unidade, medir semanalmente e comparar com o comportamento da rede para separar falha local de problema estrutural.",
-        ]
+        lines += ["", "**Recomendação executiva**", "O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é atacar 2 ou 3 prioridades da unidade, medir semanalmente e comparar com o comportamento da rede para separar falha local de problema estrutural."]
         return md_join(lines)
 
-    if any(x in q for x in ["maior diferencial", "diferencial", "pontos fortes"]):
-        bullets: List[str] = []
-        network_parts: List[str] = []
+    if "diferencial" in q or "pontos fortes" in q:
+        bullets, network_parts = [], []
         for _, row in strengths.head(3).iterrows():
             tp = row["touchpoint"]
-            bullets.append(
-                f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**."
-            )
+            bullets.append(f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
-                network_parts.append(
-                    f"- Na rede, **{tp}** aparece como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']})."
-                )
-        positive_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
-
-        lines = [
-            executive_intro(),
-            "",
-            "**Diferenciais percebidos na sua unidade**",
-            md_join(bullets) if bullets else "- Não há base suficiente para apontar diferenciais com segurança.",
-            "",
-            "**Sinais qualitativos**",
-            f"As tags positivas mais recorrentes na sua unidade são **{top_tags(compliment_tags)}**.",
-        ]
-        if positive_examples:
-            lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in positive_examples])]
+                network_parts.append(f"- Na rede, **{tp}** aparece como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']}).")
+        positives = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
+        lines = [intro, "", "**Diferenciais percebidos na sua unidade**", md_join(bullets) if bullets else "- Não há base suficiente para apontar diferenciais com segurança.", "", "**Sinais qualitativos**", f"As tags positivas mais recorrentes na sua unidade são **{top_tags(compliment_tags)}**."]
+        if positives:
+            lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in positives])]
         if network_parts:
             lines += ["", "**Comparação com a rede**", md_join(network_parts)]
-        lines += [
-            "",
-            "**Conclusão**",
-            "Os diferenciais da unidade devem ser protegidos e, quando também aparecem fortes na rede, podem ser tratados como boas práticas replicáveis.",
-        ]
+        lines += ["", "**Conclusão**", "Os diferenciais da unidade devem ser protegidos e, quando também aparecem fortes na rede, podem ser tratados como boas práticas replicáveis."]
         return md_join(lines)
 
-    if any(x in q for x in ["3 maiores problemas", "três maiores problemas", "maiores problemas"]):
-        bullets: List[str] = []
-        evidence_parts: List[str] = []
-        network_parts: List[str] = []
+    if "3 maiores problemas" in q or "três maiores problemas" in q or "maiores problemas" in q:
+        bullets, evidence_parts, network_parts = [], [], []
         for _, row in priorities.head(3).iterrows():
             tp = row["touchpoint"]
-            bullets.append(
-                f"- **{tp}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**."
-            )
-            examples = examples_for_touchpoint(tp, "Detrator", 1)
-            if examples:
-                evidence_parts.append(f"- Em **{tp}**, clientes da unidade descrevem situações como: \"{examples[0]}\".")
+            bullets.append(f"- **{tp}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
+            ex = examples_for_touchpoint(tp)
+            if ex:
+                evidence_parts.append(f'- Em **{tp}**, clientes da unidade descrevem situações como: "{ex[0]}".')
             var_row = variability_for_touchpoint(tp)
             if var_row is not None:
                 network_parts.append(f"- **{tp}** na rede: **{var_row['variability_type']}**.")
-
-        lines = [
-            executive_intro(),
-            "",
-            "**Os 3 maiores problemas da sua unidade agora**",
-            md_join(bullets) if bullets else "- Não há base suficiente para apontar os 3 maiores problemas com segurança.",
-            "",
-            "**Sinais dos comentários e tags**",
-            f"As reclamações mais recorrentes são **{top_tags(complaint_tags)}**. As sugestões mais frequentes são **{top_tags(suggestion_tags)}**.",
-        ]
+        lines = [intro, "", "**Os 3 maiores problemas da sua unidade agora**", md_join(bullets) if bullets else "- Não há base suficiente para apontar os 3 maiores problemas com segurança.", "", "**Sinais dos comentários e tags**", f"As reclamações mais recorrentes são **{top_tags(complaint_tags)}**. As sugestões mais frequentes são **{top_tags(suggestion_tags)}**."]
         if evidence_parts:
             lines += ["", "**Evidências nos comentários**", md_join(evidence_parts)]
         if network_parts:
             lines += ["", "**Comparação com a rede**", md_join(network_parts)]
-        lines += [
-            "",
-            "**Recomendação executiva**",
-            "Monte plano de ação da unidade com dono, prazo e acompanhamento semanal para esses 3 temas. Onde a rede mostrar alta variabilidade, trate como disciplina de execução local; onde o padrão for estrutural, escale o tema.",
-        ]
+        lines += ["", "**Recomendação executiva**", "Monte plano de ação da unidade com dono, prazo e acompanhamento semanal para esses 3 temas. Onde a rede mostrar alta variabilidade, trate como disciplina de execução local; onde o padrão for estrutural, escale o tema."]
         return md_join(lines)
 
-    if any(x in q for x in ["por que meu nps caiu", "porque meu nps caiu", "queda do nps"]):
+    if "caiu" in q:
         if weekly is None or len(weekly) < 2:
-            return md_join([executive_intro(), "", "Ainda não há períodos suficientes para explicar queda de NPS com segurança."])
-
-        last_weeks = weekly.tail(4).copy()
-        weeks_lines = [f"- **{r['week']}**: NPS **{r['nps']}** com **{int(r['respostas'])}** respostas" for _, r in last_weeks.iterrows()]
+            return md_join([intro, "", "Ainda não há períodos suficientes para explicar queda de NPS com segurança."])
+        weeks_lines = [f"- **{r['week']}**: NPS **{r['nps']}** com **{int(r['respostas'])}** respostas" for _, r in weekly.tail(4).iterrows()]
+        touch_text = [f"- **{row['touchpoint']}** segue entre os touchpoints mais sensíveis para explicar piora de percepção na sua unidade." for _, row in priorities.head(3).iterrows()]
         recent_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Detrator", limit=2)
-        touch_text: List[str] = []
-        for _, row in priorities.head(3).iterrows():
-            touch_text.append(f"- **{row['touchpoint']}** segue entre os touchpoints mais sensíveis para explicar piora de percepção na sua unidade.")
-
         if pd.notna(delta) and delta < 0:
-            lines = [
-                executive_intro(),
-                "",
-                f"**Queda recente identificada na unidade**
-Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.",
-                "",
-                "**Evolução recente**",
-                md_join(weeks_lines),
-                "",
-                "**Hipótese principal**",
-                f"A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**.",
-                "",
-                "**Onde olhar primeiro**",
-                md_join(touch_text),
-            ]
+            lines = [intro, "", f"**Queda recente identificada na unidade**\nSeu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.", "", "**Evolução recente**", md_join(weeks_lines), "", "**Hipótese principal**", f"A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**.", "", "**Onde olhar primeiro**", md_join(touch_text)]
             if recent_examples:
                 lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in recent_examples])]
-            lines += [
-                "",
-                "**Comparação com a rede**",
-                "Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo.",
-            ]
+            lines += ["", "**Comparação com a rede**", "Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo."]
             return md_join(lines)
+        return md_join([intro, "", "**Leitura temporal**", "Não identifiquei uma queda recente clara no NPS da sua unidade.", "", "**Evolução recente**", md_join(weeks_lines)])
 
-        return md_join([
-            executive_intro(),
-            "",
-            "**Leitura temporal**",
-            "Não identifiquei uma queda recente clara no NPS da sua unidade.",
-            "",
-            "**Evolução recente**",
-            md_join(weeks_lines),
-        ])
-
-    return md_join([
-        executive_intro(),
-        "",
-        "**Leitura inicial da unidade**",
-        f"Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.",
-        "",
-        "**Perguntas que o MVP já responde melhor para o gerente**",
-        "- Quais são os maiores pontos de atenção da minha unidade?",
-        "- O que fazer para melhorar o NPS da minha unidade?",
-        "- Qual é o maior diferencial da minha unidade?",
-        "- Quais são os 3 maiores problemas da minha unidade?",
-        "- Por que o NPS da minha unidade caiu?",
-    ])
+    return md_join([intro, "", "**Leitura inicial da unidade**", f"Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.", "", "**Perguntas que o MVP já responde melhor para o gerente**", "- Quais são os maiores pontos de atenção da minha unidade?", "- O que fazer para melhorar o NPS da minha unidade?", "- Qual é o maior diferencial da minha unidade?", "- Quais são os 3 maiores problemas da minha unidade?", "- Por que o NPS da minha unidade caiu?"])
 
 
-def load_file(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:
+def load_file(uploaded_file) -> pd.DataFrame:
     name = uploaded_file.name.lower()
-    if name.endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-    return pd.read_excel(uploaded_file)
+    return pd.read_csv(uploaded_file) if name.endswith(".csv") else pd.read_excel(uploaded_file)
 
 
 def main():
     st.title("WeHelp Retention MVP")
-    st.caption("MVP simples para leitura de planilha, cálculo de NPS, odds ratio e respostas guiadas de retenção.")
-
+    st.caption("MVP simples para leitura da planilha, cálculo de NPS, odds ratio e respostas guiadas para gerentes de unidade.")
     with st.sidebar:
-        st.header("Configurações")
         benchmark = st.number_input("Benchmark de NPS", min_value=-100.0, max_value=100.0, value=50.0, step=1.0)
-        st.markdown("**Perguntas sugeridas**")
-        st.markdown("- Quais são os maiores pontos de atenção?")
-        st.markdown("- O que fazer para melhorar meu NPS?")
-        st.markdown("- Qual é meu maior diferencial?")
-        st.markdown("- Quais são os 3 maiores problemas?")
-        st.markdown("- Por que meu NPS caiu?")
 
     uploaded_file = st.file_uploader("Suba a planilha limpa em XLSX ou CSV", type=["xlsx", "csv"])
     if not uploaded_file:
@@ -852,99 +616,54 @@ def main():
     raw = load_file(uploaded_file)
     schema = detect_schema(raw)
     data = prepare_dataframe(raw, schema)
-
     unit_options = ["Todas as unidades"] + sorted([u for u in data["unit_clean"].dropna().unique().tolist() if str(u).strip()])
     selected_unit = st.selectbox("Selecione a unidade do gerente", options=unit_options, index=0)
-
+    filtered = data if selected_unit == "Todas as unidades" else data[data["unit_clean"] == selected_unit]
     insights = build_insights(data, schema, benchmark, selected_unit=selected_unit)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("NPS da Unidade", insights["overall_nps"])
-    col2.metric("Zona", insights["zone"])
-    col3.metric("Gap vs Benchmark", insights["benchmark_gap"])
-    if selected_unit != "Todas as unidades" and pd.notna(insights.get("unit_vs_network_gap", np.nan)):
-        col4.metric("Gap vs Rede", insights["unit_vs_network_gap"])
-    else:
-        col4.metric("Respostas", len(data) if selected_unit == "Todas as unidades" else len(data[data["unit_clean"] == selected_unit]))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("NPS da Unidade", insights["overall_nps"])
+    c2.metric("Zona", insights["zone"])
+    c3.metric("Gap vs Benchmark", insights["benchmark_gap"])
+    c4.metric("Gap vs Rede" if selected_unit != "Todas as unidades" and pd.notna(insights["unit_vs_network_gap"]) else "Respostas", insights["unit_vs_network_gap"] if selected_unit != "Todas as unidades" and pd.notna(insights["unit_vs_network_gap"]) else len(filtered))
 
-    with st.expander("Schema detectado", expanded=False):
-        st.write(schema)
-
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "Resumo executivo",
-        "Segmentações",
-        "Touchpoints",
-        "Rede vs Unidade",
-        "Tags e comentários",
-        "Perguntas ao agente",
-    ])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Resumo executivo", "Segmentações", "Touchpoints", "Rede vs Unidade", "Tags e comentários", "Perguntas ao agente"])
 
     with tab1:
-        st.subheader("Resumo executivo")
-        st.markdown(answer_question("quais são os maiores pontos de atenção", insights))
-        st.markdown("---")
-        st.subheader("Top 3 prioridades")
+        st.markdown(answer_question("quais são os maiores pontos de atenção da minha unidade", insights))
         st.dataframe(insights["top_priorities"], use_container_width=True)
-        st.subheader("Top 3 forças")
-        st.dataframe(insights["top_strengths"], use_container_width=True)
-        st.subheader("Problemas reportados")
-        st.json(insights["problems"])
 
     with tab2:
-        st.subheader("NPS por período")
         st.dataframe(insights["period"], use_container_width=True)
-        st.subheader("NPS por unidade")
         st.dataframe(insights["units"], use_container_width=True)
-        st.subheader("NPS por faixa etária")
-        st.dataframe(segment_nps(data, "age_band"), use_container_width=True)
-        st.subheader("NPS por tempo de contrato")
-        st.dataframe(segment_nps(data, "tenure_band"), use_container_width=True)
-        st.subheader("NPS por gênero")
-        st.dataframe(segment_nps(data, "gender_clean"), use_container_width=True)
-        st.subheader("NPS por tipo de plano")
-        st.dataframe(segment_nps(data, "plan_type_clean"), use_container_width=True)
-        st.subheader("NPS por nome do plano")
-        st.dataframe(segment_nps(data, "plan_name_clean"), use_container_width=True)
-        st.subheader("Evolução por semana")
+        st.dataframe(segment_nps(filtered, "age_band"), use_container_width=True)
+        st.dataframe(segment_nps(filtered, "tenure_band"), use_container_width=True)
+        st.dataframe(segment_nps(filtered, "gender_clean"), use_container_width=True)
+        st.dataframe(segment_nps(filtered, "plan_type_clean"), use_container_width=True)
+        st.dataframe(segment_nps(filtered, "plan_name_clean"), use_container_width=True)
         st.dataframe(insights["weekly"], use_container_width=True)
 
     with tab3:
-        st.subheader("Touchpoints")
         st.dataframe(insights["touchpoints"], use_container_width=True)
 
     with tab4:
-        st.subheader("Comparação rede vs unidade")
         if selected_unit == "Todas as unidades":
             st.info("Selecione uma unidade específica para ver o comparativo do gerente contra a rede.")
         else:
             st.markdown(f"**Unidade selecionada:** {selected_unit}")
-            st.markdown(f"**NPS da unidade:** {insights['overall_nps']}  ")
-            st.markdown(f"**NPS da rede:** {insights['network_nps']}  ")
-            st.markdown(f"**Gap da unidade vs rede:** {insights['unit_vs_network_gap']}  ")
-            st.subheader("Leitura de variabilidade por touchpoint na rede")
+            st.markdown(f"**NPS da unidade:** {insights['overall_nps']}")
+            st.markdown(f"**NPS da rede:** {insights['network_nps']}")
+            st.markdown(f"**Gap da unidade vs rede:** {insights['unit_vs_network_gap']}")
             st.dataframe(insights["network_variability"], use_container_width=True)
 
     with tab5:
-        st.subheader("Resumo de tags")
         st.dataframe(insights["tags"], use_container_width=True)
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("**Reclamações**")
-            st.dataframe(insights["complaint_tags"], use_container_width=True)
-        with c2:
-            st.markdown("**Elogios**")
-            st.dataframe(insights["compliment_tags"], use_container_width=True)
-        with c3:
-            st.markdown("**Sugestões**")
-            st.dataframe(insights["suggestion_tags"], use_container_width=True)
-        st.subheader("Fontes de comentário mais frequentes")
-        st.dataframe(top_comment_themes(data, schema, n=20), use_container_width=True)
+        st.dataframe(insights["comment_evidence"].head(50), use_container_width=True)
 
     with tab6:
-        st.subheader("Pergunte ao agente")
-        question = st.text_input("Digite sua pergunta", value="Quais são os maiores pontos de atenção?")
+        q = st.text_input("Digite sua pergunta", value="Quais são os maiores pontos de atenção da minha unidade?")
         if st.button("Responder"):
-            st.markdown(answer_question(question, insights))
+            st.markdown(answer_question(q, insights))
 
 
 if __name__ == "__main__":
