@@ -484,7 +484,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         evidence_text = "; ".join(evidence) if evidence else "não há segmentação suficiente para apontar período ou unidade crítica com segurança"
 
        problem_text = ""
-if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
+        if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
         problem_text = (
         f"**Impacto de problema reportado**\n"
         f"- NPS com problema: **{problems['nps_problem']}**\n"
