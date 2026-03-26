@@ -576,7 +576,91 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         positive_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
         positive_text = ""
         if positive_examples:
-            positive_text = "\n\n**Evidências nos comentários**\n" + "\n".join([f"- \"{(uploaded_file) -> pd.DataFrame:
+            positive_text = "\n\n**Evidências nos comentários**\n" + "\n".join([f"- \"{e}\"" for e in positive_examples])
+
+        return (
+            f"**Diagnóstico**\nSeu maior diferencial hoje está menos na média geral e mais em alguns atributos da experiência que realmente ajudam a formar promotores.\n\n"
+            f"**Principais diferenciais percebidos**\n"
+            + "\n".join(bullets)
+            + f"\n\n**Sinais qualitativos**\nAs tags positivas mais recorrentes são: **{top_tags(compliment_tags)}**.\n\n"
+            f"**Onde isso aparece com mais força**\n{extra_text}."
+            + positive_text
+            + "\n\n**Leitura executiva**\nO seu diferencial competitivo percebido está nos pontos em que a experiência combina boa avaliação com forte influência sobre a probabilidade de o cliente virar promotor."
+        )
+
+    if any(x in q for x in ["3 maiores problemas", "três maiores problemas", "maiores problemas"]):
+        bullets = []
+        evidence_parts = []
+        for _, row in priorities.head(3).iterrows():
+            tp = row["touchpoint"]
+            bullets.append(
+                f"- **{tp}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}**."
+            )
+            examples = examples_for_touchpoint(tp, "Detrator", 1)
+            if examples:
+                evidence_parts.append(f"- Em **{tp}**, clientes descrevem situações como: \"{examples[0]}\"")
+
+        comments_text = ""
+        if evidence_parts:
+            comments_text = "\n\n**Evidências nos comentários**\n" + "\n".join(evidence_parts)
+
+        return (
+            f"**Os 3 maiores problemas para resolver agora**\n"
+            + "\n".join(bullets)
+            + "\n\n**Por que estes 3?**\nEles unem duas coisas ao mesmo tempo: desempenho abaixo do ideal e forte influência na formação de promotores e detratores."
+            + f"\n\n**Sinais dos comentários e tags**\nAs reclamações mais recorrentes hoje são: **{top_tags(complaint_tags)}**. As sugestões mais frequentes são: **{top_tags(suggestion_tags)}**."
+            + comments_text
+            + "\n\n**Recomendação prática**\nMonte planos de ação com dono, prazo e acompanhamento semanal para esses 3 temas antes de dispersar energia em temas secundários."
+        )
+
+    if any(x in q for x in ["por que meu nps caiu", "porque meu nps caiu", "queda do nps"]):
+        if len(weekly) < 2:
+            return "Ainda não há períodos suficientes para explicar queda de NPS com segurança."
+
+        last_weeks = weekly.tail(4).copy()
+        weeks_lines = [f"- **{r['week']}**: NPS **{r['nps']}** com **{int(r['respostas'])}** respostas" for _, r in last_weeks.iterrows()]
+
+        touch_text = []
+        for _, row in priorities.head(3).iterrows():
+            touch_text.append(f"- **{row['touchpoint']}** continua entre os touchpoints mais sensíveis para explicar piora de percepção.")
+
+        recent_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Detrator", limit=2)
+        recent_text = ""
+        if recent_examples:
+            recent_text = "\n\n**Evidências nos comentários**\n" + "\n".join([f"- \"{e}\"" for e in recent_examples])
+
+        if delta is not None and pd.notna(delta) and delta < 0:
+            return (
+                f"**Queda recente identificada**\n"
+                f"Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.\n\n"
+                f"**Evolução recente**\n"
+                + "\n".join(weeks_lines)
+                + f"\n\n**Hipótese principal**\nA queda não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente: **{top_tags(complaint_tags)}**.\n\n"
+                + "**Onde olhar primeiro**\n"
+                + "\n".join(touch_text)
+                + recent_text
+                + "\n\n**Próximo passo recomendado**\nComparar a última semana com a anterior por unidade, período, tipo de plano e nome do plano para localizar exatamente onde a queda se concentrou."
+            )
+
+        return (
+            f"**Leitura temporal**\nNão identifiquei uma queda recente clara no NPS.\n\n"
+            f"**Evolução recente**\n"
+            + "\n".join(weeks_lines)
+        )
+
+    return (
+        f"**Resumo executivo**\nSeu NPS geral está em **{overall_nps}** e a classificação atual é **{zone}**.\n\n"
+        f"**Leitura inicial**\nOs principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.\n\n"
+        f"**Perguntas que o MVP já responde melhor**\n"
+        f"- Quais são os maiores pontos de atenção?\n"
+        f"- O que fazer para melhorar meu NPS?\n"
+        f"- Qual é meu maior diferencial?\n"
+        f"- Quais são os 3 maiores problemas?\n"
+        f"- Por que meu NPS caiu?"
+    )
+
+
+def load_file(uploaded_file) -> pd.DataFrame:(uploaded_file) -> pd.DataFrame:
     name = uploaded_file.name.lower()
     if name.endswith(".csv"):
         return pd.read_csv(uploaded_file)
