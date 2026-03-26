@@ -391,36 +391,36 @@ def touchpoint_network_variability(data: pd.DataFrame, schema: Schema) -> pd.Dat
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
-def build_insights(data: pd.DataFrame, schema: Schema, benchmark: float, selected_unit: Optional[str] = None) -> Dict[str, object]:
+def build_insights(data: pd.DataFrame, schema: Schema, benchmark: float, selected_: Optional[str] = None) -> Dict[str, object]:
     network_data = data.copy()
-    unit_data = data[data["unit_clean"] == selected_unit].copy() if selected_unit and selected_unit != "Todas as unidades" else data.copy()
-    selected_unit = selected_unit or "Todas as unidades"
+    _data = data[data["_clean"] == selected_].copy() if selected_ and selected_ != "Todas as unidades" else data.copy()
+    selected_ = selected_ or "Todas as unidades"
 
-    overall_nps = nps_score(unit_data[schema.nps])
+    overall_nps = nps_score(_data[schema.nps])
     network_nps = nps_score(network_data[schema.nps])
-    touch = touchpoint_summary(unit_data, schema)
+    touch = touchpoint_summary(_data, schema)
     if not touch.empty:
         touch["bucket"] = touch.apply(lambda r: classify_touchpoint_bucket(r["nps_touchpoint"], r["odds_ratio"]), axis=1)
 
-    weekly = segment_nps(unit_data, "week")
+    weekly = segment_nps(_data, "week")
     why_fell = np.nan
     if len(weekly) >= 2:
         vals = weekly.tail(2)["nps"].tolist()
         if len(vals) == 2 and all(pd.notna(vals)):
             why_fell = vals[-1] - vals[-2]
 
-    unit_vs_network_gap = round(overall_nps - network_nps, 1) if selected_unit != "Todas as unidades" and pd.notna(overall_nps) and pd.notna(network_nps) else np.nan
-    tags = tag_summary(unit_data, schema)
+    _vs_network_gap = round(overall_nps - network_nps, 1) if selected_ != "Todas as unidades" and pd.notna(overall_nps) and pd.notna(network_nps) else np.nan
+    tags = tag_summary(_data, schema)
 
     return {
-        "selected_unit": selected_unit,
+        "selected_": selected_,
         "overall_nps": overall_nps,
         "zone": nps_zone(overall_nps),
         "benchmark_gap": round(overall_nps - benchmark, 1) if pd.notna(overall_nps) else np.nan,
         "network_nps": network_nps,
-        "unit_vs_network_gap": unit_vs_network_gap,
+        "_vs_network_gap": _vs_network_gap,
         "touchpoints": touch,
-        "comment_evidence": collect_comment_evidence(unit_data, schema),
+        "comment_evidence": collect_comment_evidence(_data, schema),
         "network_variability": touchpoint_network_variability(network_data, schema),
         "problems": problem_summary(unit_data),
         "tags": tags,
@@ -554,7 +554,13 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
     if pd.notna(unit_vs_network_gap) and unit_vs_network_gap < 0:
         risk = f"Sua unidade está abaixo da rede. Se nada for feito, a tendência é perda de clientes e aumento de churn."
 
-    return f"""{executive_intro()}
+intro = f"""**Leitura executiva da unidade**
+Unidade analisada: **{selected_unit}**.
+Seu NPS está em **{overall_nps}**, classificado como **{zone}**.
+A distância para o benchmark é de **{benchmark_gap}** pontos.
+"""
+
+return f"""{intro}
 
 **Diagnóstico direto**
 
