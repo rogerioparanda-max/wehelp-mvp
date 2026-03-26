@@ -519,13 +519,13 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 
     if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
 
-    priorities_list = priorities.head(3)
+        priorities_list = priorities.head(3)
 
-    diagnosis = []
-    decisions = []
-    actions_today = []
-    team_actions = []
-    evidence_parts = []
+        diagnosis = []
+        decisions = []
+        actions_today = []
+        team_actions = []
+        evidence_parts = []
 
     for i, (_, row) in enumerate(priorities_list.iterrows(), start=1):
         tp = row["touchpoint"]
