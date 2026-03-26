@@ -494,10 +494,10 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
             evidence.append(f"a unidade com pior desempenho, entre as com base mínima, é **{worst_unit[0]}** com NPS **{worst_unit[1]}**")
         evidence_text = "; ".join(evidence) if evidence else "não há segmentação suficiente para apontar período ou unidade crítica com segurança"
 
-        problem_text = ""
+        problem_text = """
         if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
             problem_text = (
-                f"
+                f"""
 
 **Impacto de problema reportado**
 "
