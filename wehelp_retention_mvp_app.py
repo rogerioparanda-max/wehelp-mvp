@@ -517,32 +517,77 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         lines += ["", "**Conclusão**", "O foco do gerente deve estar nos touchpoints que mais pressionam a sua unidade hoje, mas sempre comparando com a rede para entender o que é problema local de execução e o que é padrão estrutural."]
         return md_join(lines)
 
-    if "melhorar" in q:
-        actions, evidence_parts, network_parts = [], [], []
-        for _, row in priorities.head(3).iterrows():
-            tp = row["touchpoint"]
-            actions.append(f"- **{tp}** deve entrar primeiro no plano de ação da sua unidade: ele combina desempenho insuficiente com alto poder de influenciar promotores versus detratores.")
-            ex = examples_for_touchpoint(tp)
-            if ex:
-                evidence_parts.append(f'- Em **{tp}**, os clientes da unidade relatam: "{ex[0]}".')
-            var_row = variability_for_touchpoint(tp)
-            if var_row is not None:
-                network_parts.append(f"- Na rede, **{tp}** está classificado como **{var_row['variability_type']}**. Isso ajuda a decidir se a ação deve ser local ou se o tema merece escalonamento para a rede.")
-        worst = worst_segment(period, "period")
-        focused = []
-        if worst:
-            focused.append(f"- Trate **{worst[0]}** como operação prioritária, porque é o período com pior NPS da sua unidade.")
-        if pd.notna(problems.get("nps_problem", np.nan)) and pd.notna(problems.get("nps_no_problem", np.nan)):
-            focused.append(f"- Reforce o fechamento de problemas: na sua unidade, quem reporta problema tem NPS **{problems['nps_problem']}**, contra **{problems['nps_no_problem']}** entre os demais.")
-        if pd.notna(unit_vs_network_gap) and unit_vs_network_gap < 0:
-            focused.append(f"- Sua unidade está abaixo da média da rede em **{abs(unit_vs_network_gap)}** pontos. Priorize execução disciplinada nos touchpoints críticos antes de abrir novas frentes.")
-        lines = [intro, "", "**O que fazer para melhorar o NPS da sua unidade**", md_join(actions) if actions else "- Não há base suficiente para definir prioridades com segurança.", "", "**Onde concentrar a execução do gerente**", md_join(focused) if focused else "- Ainda não há base suficiente para apontar um recorte operacional prioritário.", "", "**Leitura qualitativa da unidade**", f"Os temas mais citados nas reclamações são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**."]
-        if evidence_parts:
-            lines += ["", "**Voz do cliente da unidade**", md_join(evidence_parts)]
-        if network_parts:
-            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
-        lines += ["", "**Recomendação executiva**", "O gerente não deve tentar melhorar tudo ao mesmo tempo. O melhor caminho é atacar 2 ou 3 prioridades da unidade, medir semanalmente e comparar com o comportamento da rede para separar falha local de problema estrutural."]
-        return md_join(lines)
+    if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
+
+    priorities_list = priorities.head(3)
+
+    diagnosis = []
+    decisions = []
+    actions_today = []
+    team_actions = []
+    evidence_parts = []
+
+    for i, (_, row) in enumerate(priorities_list.iterrows(), start=1):
+        tp = row["touchpoint"]
+
+        diagnosis.append(
+            f"{i}. **{tp}** está pressionando o NPS da sua unidade (NPS {row['nps_touchpoint']} | alto impacto)."
+        )
+
+        decisions.append(
+            f"{i}. **{tp} é prioridade imediata.** Não tratar isso primeiro dilui qualquer esforço de melhoria."
+        )
+
+        actions_today.append(
+            f"- Hoje: vá para **{tp}**, observe operação ao vivo e identifique falhas reais de execução."
+        )
+
+        team_actions.append(
+            f"- Esta semana: alinhe padrão com o time de **{tp}**, mostre exemplos reais e cobre execução consistente."
+        )
+
+        examples = find_comment_examples(comment_evidence, touchpoint=tp, nps_class="Detrator", limit=1)
+        if examples:
+            evidence_parts.append(f"- Em **{tp}**, clientes dizem: \"{examples[0]}\"")
+
+    risk = ""
+    if pd.notna(unit_vs_network_gap) and unit_vs_network_gap < 0:
+        risk = f"Sua unidade está abaixo da rede. Se nada for feito, a tendência é perda de clientes e aumento de churn."
+
+    return f"""{executive_intro()}
+
+**Diagnóstico direto**
+
+{chr(10).join(diagnosis)}
+
+**Decisão gerencial**
+
+{chr(10).join(decisions)}
+
+**O que você deve fazer HOJE (ação do gerente)**
+
+{chr(10).join(actions_today)}
+
+**O que ajustar com o time (execução)**
+
+{chr(10).join(team_actions)}
+
+**Voz do cliente (evidência real)**
+
+{chr(10).join(evidence_parts) if evidence_parts else "Ainda sem comentários suficientes, mas o padrão quantitativo já indica problema claro."}
+
+**Risco de não agir**
+
+{risk if risk else "Mesmo acima da média, ignorar esses pontos reduz sua vantagem competitiva."}
+
+**Mensagem final (nível CEO)**
+
+NPS não melhora com análise.  
+Melhora quando o gerente muda o padrão de execução da unidade.
+
+Se você atacar esses 2–3 pontos com disciplina,  
+você melhora retenção. Se não, continua medindo problema.
+"""    
 
     if "diferencial" in q or "pontos fortes" in q:
         bullets, network_parts = [], []
