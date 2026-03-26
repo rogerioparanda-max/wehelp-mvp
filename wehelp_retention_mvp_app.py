@@ -598,36 +598,36 @@ você melhora retenção. Se não, continua medindo problema.
     if "diferencial" in q or "pontos fortes" in q:
         bullets, network_parts = [], []
         for _, row in strengths.head(3).iterrows():
-            tp = row["touchpoint"]
-            bullets.append(f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
-            var_row = variability_for_touchpoint(tp)
+        tp = row["touchpoint"]
+        bullets.append(f"- **{tp}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
+        var_row = variability_for_touchpoint(tp)
     if var_row is not None:
-                network_parts.append(f"- Na rede, **{tp}** aparece como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']}).")
+        network_parts.append(f"- Na rede, **{tp}** aparece como **{var_row['variability_type']}**. Melhor unidade: **{var_row['best_unit']}** ({var_row['best_nps']}).")
         positives = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Promotor", limit=2)
         lines = [intro, "", "**Diferenciais percebidos na sua unidade**", md_join(bullets) if bullets else "- Não há base suficiente para apontar diferenciais com segurança.", "", "**Sinais qualitativos**", f"As tags positivas mais recorrentes na sua unidade são **{top_tags(compliment_tags)}**."]
     if positives:
-            lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in positives])]
+        lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in positives])]
     if network_parts:
-            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        lines += ["", "**Comparação com a rede**", md_join(network_parts)]
         lines += ["", "**Conclusão**", "Os diferenciais da unidade devem ser protegidos e, quando também aparecem fortes na rede, podem ser tratados como boas práticas replicáveis."]
         return md_join(lines)
 
     if "3 maiores problemas" in q or "três maiores problemas" in q or "maiores problemas" in q:
         bullets, evidence_parts, network_parts = [], [], []
         for _, row in priorities.head(3).iterrows():
-            tp = row["touchpoint"]
-            bullets.append(f"- **{tp}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
-            ex = examples_for_touchpoint(tp)
+        tp = row["touchpoint"]
+       bullets.append(f"- **{tp}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e classificação **{row.get('bucket', 'Sem classificação')}**.")
+        ex = examples_for_touchpoint(tp)
     if ex:
-                evidence_parts.append(f'- Em **{tp}**, clientes da unidade descrevem situações como: "{ex[0]}".')
-            var_row = variability_for_touchpoint(tp)
+        evidence_parts.append(f'- Em **{tp}**, clientes da unidade descrevem situações como: "{ex[0]}".')
+        var_row = variability_for_touchpoint(tp)
     if var_row is not None:
-                network_parts.append(f"- **{tp}** na rede: **{var_row['variability_type']}**.")
+        network_parts.append(f"- **{tp}** na rede: **{var_row['variability_type']}**.")
         lines = [intro, "", "**Os 3 maiores problemas da sua unidade agora**", md_join(bullets) if bullets else "- Não há base suficiente para apontar os 3 maiores problemas com segurança.", "", "**Sinais dos comentários e tags**", f"As reclamações mais recorrentes são **{top_tags(complaint_tags)}**. As sugestões mais frequentes são **{top_tags(suggestion_tags)}**."]
     if evidence_parts:
-            lines += ["", "**Evidências nos comentários**", md_join(evidence_parts)]
+        lines += ["", "**Evidências nos comentários**", md_join(evidence_parts)]
     if network_parts:
-            lines += ["", "**Comparação com a rede**", md_join(network_parts)]
+        lines += ["", "**Comparação com a rede**", md_join(network_parts)]
         lines += ["", "**Recomendação executiva**", "Monte plano de ação da unidade com dono, prazo e acompanhamento semanal para esses 3 temas. Onde a rede mostrar alta variabilidade, trate como disciplina de execução local; onde o padrão for estrutural, escale o tema."]
         return md_join(lines)
 
@@ -638,10 +638,10 @@ você melhora retenção. Se não, continua medindo problema.
         touch_text = [f"- **{row['touchpoint']}** segue entre os touchpoints mais sensíveis para explicar piora de percepção na sua unidade." for _, row in priorities.head(3).iterrows()]
         recent_examples = find_comment_examples(comment_evidence, touchpoint=None, nps_class="Detrator", limit=2)
     if pd.notna(delta) and delta < 0:
-            lines = [intro, "", f"**Queda recente identificada na unidade**\nSeu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.", "", "**Evolução recente**", md_join(weeks_lines), "", "**Hipótese principal**", f"A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**.", "", "**Onde olhar primeiro**", md_join(touch_text)]
+        lines = [intro, "", f"**Queda recente identificada na unidade**\nSeu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.", "", "**Evolução recente**", md_join(weeks_lines), "", "**Hipótese principal**", f"A queda da sua unidade não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente **{top_tags(complaint_tags)}**.", "", "**Onde olhar primeiro**", md_join(touch_text)]
     if recent_examples:
-                lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in recent_examples])]
-            lines += ["", "**Comparação com a rede**", "Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo."]
+        lines += ["", "**Evidências nos comentários**", md_join([f'- "{e}"' for e in recent_examples])]
+        lines += ["", "**Comparação com a rede**", "Compare a trajetória da sua unidade com a média da rede para entender se a queda é local ou parte de um padrão mais amplo."]
         return md_join(lines)
         return md_join([intro, "", "**Leitura temporal**", "Não identifiquei uma queda recente clara no NPS da sua unidade.", "", "**Evolução recente**", md_join(weeks_lines)])
 
