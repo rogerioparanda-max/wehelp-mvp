@@ -475,8 +475,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 
     def executive_intro() -> str:
         return (
-            f"**Leitura executiva**
-"
+            f"""**Leitura executiva**"
             f"Seu NPS está em **{overall_nps}**, classificado como **{zone}**. "
             f"A distância para o benchmark é de **{benchmark_gap}** pontos."
         )
