@@ -602,8 +602,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         - NPS sem problema: **{problems['nps_no_problem']}**
         - Clientes com problema reportado: **{problems['pct_problem']}%**
         """
-            )
-
+        
         return (
             executive_intro()
             + "
