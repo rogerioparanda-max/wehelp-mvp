@@ -558,13 +558,10 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         return match.iloc[0]
 
     def executive_intro() -> str:
-        intro = (
-            f"**Leitura executiva da unidade**
-"
-           intro = f"""**Leitura executiva da unidade**
-            Unidade analisada: **{selected_unit}**. Seu NPS está em **{overall_nps}**, classificado como **{zone}**.
-            A distância para o benchmark é de **{benchmark_gap}** pontos."""
-        )
+        intro = f"""**Leitura executiva da unidade**
+    Unidade analisada: **{selected_unit}**. Seu NPS está em **{overall_nps}**, classificado como **{zone}**.
+    A distância para o benchmark é de **{benchmark_gap}** pontos."""
+        
         if selected_unit != "Todas as unidades" and pd.notna(network_nps):
             intro += f" O NPS geral da rede está em **{network_nps}**"
             if pd.notna(unit_vs_network_gap):
@@ -572,6 +569,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
                 intro += f", e a sua unidade está **{abs(unit_vs_network_gap)}** pontos {direction} da média da rede."
             else:
                 intro += "."
+                
         return intro
 
     if any(x in q for x in ["maiores pontos de atenção", "pontos de atenção", "atenção"]):
