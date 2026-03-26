@@ -439,81 +439,258 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
     problems = insights["problems"]
     complaint_tags = insights["complaint_tags"]
     compliment_tags = insights["compliment_tags"]
+    suggestion_tags = insights["suggestion_tags"]
     weekly = insights["weekly"]
+    period = insights["period"]
+    units = insights["units"]
+    touchpoints = insights["touchpoints"]
     delta = insights["why_fell_delta"]
+
+    def top_tags(df: pd.DataFrame, max_items: int = 3) -> str:
+        if df is None or df.empty:
+            return "sem recorrência suficiente nas tags"
+        return ", ".join(df["tag"].astype(str).head(max_items).tolist())
+
+    def worst_segment(df: pd.DataFrame, label_col: str) -> Optional[Tuple[str, float, int]]:
+        valid = df[df["respostas"] >= 5].copy()
+        valid = valid[pd.notna(valid["nps"])]
+        if valid.empty:
+            return None
+        row = valid.sort_values("nps", ascending=True).iloc[0]
+        return row[label_col], row["nps"], row["respostas"]
+
+    def best_segment(df: pd.DataFrame, label_col: str) -> Optional[Tuple[str, float, int]]:
+        valid = df[df["respostas"] >= 5].copy()
+        valid = valid[pd.notna(valid["nps"])]
+        if valid.empty:
+            return None
+        row = valid.sort_values("nps", ascending=False).iloc[0]
+        return row[label_col], row["nps"], row["respostas"]
 
     if any(x in q for x in ["maiores pontos de atenção", "pontos de atenção", "atenção"]):
         bullets = []
-        for _, row in priorities.iterrows():
+        for _, row in priorities.head(3).iterrows():
             bullets.append(
-                f"- **{row['touchpoint']}** — NPS do ponto: **{row['nps_touchpoint']}**, odds ratio: **{row['odds_ratio']}**"
+                f"- **{row['touchpoint']}**: NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}** e índice de prioridade **{row['priority_index']}**."
             )
+
+        worst_period = worst_segment(period, "period")
+        worst_unit = worst_segment(units, "unit_clean")
+        evidence = []
+        if worst_period:
+            evidence.append(f"o pior período é **{worst_period[0]}** com NPS **{worst_period[1]}**")
+        if worst_unit:
+            evidence.append(f"a unidade com pior desempenho, entre as com base mínima, é **{worst_unit[0]}** com NPS **{worst_unit[1]}**")
+        evidence_text = "; ".join(evidence) if evidence else "não há segmentação suficiente para apontar período ou unidade crítica com segurança"
+
+        problem_text = ""
+        if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
+            problem_text = (
+                f"
+
+**Impacto de problema reportado**
+"
+                f"- NPS com problema: **{problems['nps_problem']}**
+"
+                f"- NPS sem problema: **{problems['nps_no_problem']}**
+"
+                f"- Clientes com problema reportado: **{problems['pct_problem']}%**"
+            )
+
         return (
-            f"Seu NPS geral está em **{overall_nps}**, na **{zone}**, com gap de **{benchmark_gap}** pontos contra o benchmark.\n\n"
-            f"Os maiores pontos de atenção hoje são:\n" + "\n".join(bullets)
+            f"**Diagnóstico geral**
+"
+            f"Seu NPS está em **{overall_nps}**, na **{zone}**, com diferença de **{benchmark_gap}** pontos versus o benchmark.
+
+"
+            f"**Maiores pontos de atenção**
+"
+            + "
+".join(bullets)
+            + f"
+
+**Leitura executiva**
+{evidence_text}.
+
+"
+            f"**Causa raiz mais provável**
+As tags de reclamação mais recorrentes hoje são: **{top_tags(complaint_tags)}**."
+            + problem_text
+            + "
+
+**O que isso significa**
+Seu principal desafio não parece ser percepção geral da marca, e sim fricções operacionais concentradas em alavancas que influenciam diretamente a formação de promotores e detratores."
         )
 
     if any(x in q for x in ["melhorar meu nps", "melhorar o nps", "como melhorar"]):
         actions = []
-        for _, row in priorities.iterrows():
+        for _, row in priorities.head(3).iterrows():
             actions.append(
-                f"- Priorize **{row['touchpoint']}**, porque ele combina impacto alto no engajamento com desempenho ainda abaixo do ideal."
+                f"- Ataque **{row['touchpoint']}** primeiro: ele combina desempenho insuficiente com alta capacidade de influenciar promotores versus detratores."
             )
-        problem_text = ""
+
+        worst_period = worst_segment(period, "period")
+        worst_unit = worst_segment(units, "unit_clean")
+        focused_actions = []
+        if worst_period:
+            focused_actions.append(f"- Trate o período **{worst_period[0]}** como frente prioritária, porque é onde o NPS está mais pressionado.")
+        if worst_unit:
+            focused_actions.append(f"- Faça plano de ação específico para a unidade **{worst_unit[0]}**, que hoje aparece como o maior ponto de atenção operacional.")
         if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
-            problem_text = (
-                f"\n\nQuando há problema reportado, o NPS fica em **{problems['nps_problem']}**, versus **{problems['nps_no_problem']}** entre quem não reportou problema."
+            focused_actions.append(
+                f"- Reforce o processo de resolução de problemas: clientes que reportam problema têm NPS **{problems['nps_problem']}**, versus **{problems['nps_no_problem']}** entre os que não reportam."
             )
+
         return (
-            f"Para melhorar o NPS, eu atacaria primeiro as maiores alavancas operacionais:\n"
-            + "\n".join(actions)
-            + problem_text
+            f"**Diagnóstico**
+Seu NPS atual é **{overall_nps}** e está na **{zone}**. Para subir esse indicador, eu priorizaria ações em três níveis.
+
+"
+            f"**1. Alavancas estruturais**
+" + "
+".join(actions) +
+            f"
+
+**2. Foco operacional**
+" + ("
+".join(focused_actions) if focused_actions else "- Ainda não há segmentação suficiente para apontar onde concentrar a execução.") +
+            f"
+
+**3. Escuta qualitativa**
+Use as reclamações mais recorrentes para direcionar os planos de ação. Hoje os temas mais citados são **{top_tags(complaint_tags)}**, enquanto os elogios mais recorrentes são **{top_tags(compliment_tags)}**.
+
+"
+            f"**Recomendação final**
+Não tente melhorar tudo ao mesmo tempo. Escolha os 2 ou 3 touchpoints com maior prioridade, concentre a execução neles e acompanhe a mudança por unidade, período e tipo de plano."
         )
 
     if any(x in q for x in ["maior diferencial", "diferencial", "pontos fortes"]):
         bullets = []
-        for _, row in strengths.iterrows():
+        for _, row in strengths.head(3).iterrows():
             bullets.append(
-                f"- **{row['touchpoint']}** — NPS do ponto: **{row['nps_touchpoint']}**, odds ratio: **{row['odds_ratio']}**"
+                f"- **{row['touchpoint']}**: NPS do ponto **{row['nps_touchpoint']}** e odds ratio **{row['odds_ratio']}**."
             )
-        extra = ""
-        if not compliment_tags.empty:
-            top = compliment_tags.iloc[0]
-            extra = f"\n\nNas tags positivas, o tema mais recorrente é **{top['tag']}**."
-        return "Os maiores diferenciais percebidos pelo cliente são:\n" + "\n".join(bullets) + extra
+        best_unit = best_segment(units, "unit_clean")
+        best_period = best_segment(period, "period")
+        extra = []
+        if best_unit:
+            extra.append(f"a unidade destaque é **{best_unit[0]}** com NPS **{best_unit[1]}**")
+        if best_period:
+            extra.append(f"o melhor período é **{best_period[0]}** com NPS **{best_period[1]}**")
+        extra_text = "; ".join(extra) if extra else "não há segmentação suficiente para apontar destaques operacionais"
+
+        return (
+            f"**Diagnóstico**
+Seu maior diferencial hoje está menos na média geral e mais em alguns atributos da experiência que realmente ajudam a formar promotores.
+
+"
+            f"**Principais diferenciais percebidos**
+" + "
+".join(bullets) +
+            f"
+
+**Sinais qualitativos**
+As tags positivas mais recorrentes são: **{top_tags(compliment_tags)}**.
+
+"
+            f"**Onde isso aparece com mais força**
+{extra_text}.
+
+"
+            f"**Leitura executiva**
+O seu diferencial competitivo percebido está nos pontos em que a experiência combina boa avaliação com forte influência sobre a probabilidade de o cliente virar promotor."
+        )
 
     if any(x in q for x in ["3 maiores problemas", "três maiores problemas", "maiores problemas"]):
         bullets = []
         for _, row in priorities.head(3).iterrows():
-            bullets.append(f"- **{row['touchpoint']}**")
-        extra = ""
-        if not complaint_tags.empty:
-            tags_text = ", ".join(complaint_tags['tag'].head(3).tolist())
-            extra = f"\n\nAs tags de reclamação mais frequentes reforçam esse diagnóstico: **{tags_text}**."
-        return "Os 3 maiores problemas que você deveria atacar agora são:\n" + "\n".join(bullets) + extra
+            bullets.append(
+                f"- **{row['touchpoint']}** — NPS do ponto **{row['nps_touchpoint']}**, odds ratio **{row['odds_ratio']}**."
+            )
+        return (
+            f"**Os 3 maiores problemas para resolver agora**
+" + "
+".join(bullets) +
+            f"
+
+**Por que estes 3?**
+Eles unem duas coisas ao mesmo tempo: desempenho abaixo do ideal e forte influência na formação de promotores e detratores.
+
+"
+            f"**Sinais dos comentários e tags**
+As reclamações mais recorrentes hoje são: **{top_tags(complaint_tags)}**. As sugestões mais frequentes são: **{top_tags(suggestion_tags)}**.
+
+"
+            f"**Recomendação prática**
+Monte planos de ação com dono, prazo e acompanhamento semanal para esses 3 temas antes de dispersar energia em temas secundários."
+        )
 
     if any(x in q for x in ["por que meu nps caiu", "porque meu nps caiu", "queda do nps"]):
         if len(weekly) < 2:
             return "Ainda não há períodos suficientes para explicar queda de NPS com segurança."
+
         last_weeks = weekly.tail(4).copy()
-        weeks_lines = [f"- **{r['week']}**: {r['nps']}" for _, r in last_weeks.iterrows()]
+        weeks_lines = [f"- **{r['week']}**: NPS **{r['nps']}** com **{int(r['respostas'])}** respostas" for _, r in last_weeks.iterrows()]
+
+        touch_text = []
+        for _, row in priorities.head(3).iterrows():
+            touch_text.append(f"- **{row['touchpoint']}** continua entre os touchpoints mais sensíveis para explicar piora de percepção.")
+
         if delta is not None and pd.notna(delta) and delta < 0:
             return (
-                "Houve uma queda recente no NPS.\n\n"
-                "Evolução mais recente:\n" + "\n".join(weeks_lines) +
-                f"\n\nA última variação foi de **{round(delta, 1)}** pontos. "
-                "Os primeiros pontos para investigar são os touchpoints prioritários e as tags de reclamação mais recorrentes do período."
+                f"**Queda recente identificada**
+"
+                f"Seu NPS caiu **{abs(round(delta, 1))}** pontos na comparação entre os dois períodos mais recentes.
+
+"
+                f"**Evolução recente**
+" + "
+".join(weeks_lines) +
+                f"
+
+**Hipótese principal**
+A queda não deve ser lida só como oscilação estatística. Ela precisa ser investigada a partir dos touchpoints mais críticos e das reclamações mais recorrentes, principalmente: **{top_tags(complaint_tags)}**.
+
+"
+                f"**Onde olhar primeiro**
+" + "
+".join(touch_text) +
+                f"
+
+**Próximo passo recomendado**
+Comparar a última semana com a anterior por unidade, período, tipo de plano e nome do plano para localizar exatamente onde a queda se concentrou."
             )
-        return "Não identifiquei queda recente clara no NPS.\n\n" + "\n".join(weeks_lines)
+
+        return (
+            f"**Leitura temporal**
+Não identifiquei uma queda recente clara no NPS.
+
+"
+            f"**Evolução recente**
+" + "
+".join(weeks_lines)
+        )
 
     return (
-        f"Seu NPS geral está em **{overall_nps}** ({zone}). "
-        "No MVP, eu respondo melhor perguntas como:\n"
-        "- Quais são os maiores pontos de atenção?\n"
-        "- O que fazer para melhorar meu NPS?\n"
-        "- Qual é meu maior diferencial?\n"
-        "- Quais são os 3 maiores problemas?\n"
-        "- Por que meu NPS caiu?"
+        f"**Resumo executivo**
+Seu NPS geral está em **{overall_nps}** e a classificação atual é **{zone}**.
+
+"
+        f"**Leitura inicial**
+Os principais temas de reclamação são **{top_tags(complaint_tags)}**, enquanto os temas positivos mais recorrentes são **{top_tags(compliment_tags)}**.
+
+"
+        f"**Perguntas que o MVP já responde melhor**
+"
+        f"- Quais são os maiores pontos de atenção?
+"
+        f"- O que fazer para melhorar meu NPS?
+"
+        f"- Qual é meu maior diferencial?
+"
+        f"- Quais são os 3 maiores problemas?
+"
+        f"- Por que meu NPS caiu?"
     )
 
 
