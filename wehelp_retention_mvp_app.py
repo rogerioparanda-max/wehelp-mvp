@@ -593,16 +593,15 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         worst_period = worst_segment(period, "period")
         evidence_text = f"o período mais pressionado da sua unidade é **{worst_period[0]}** com NPS **{worst_period[1]}**" if worst_period else "não há base suficiente para apontar um período crítico com segurança"
 
-        problem_text = ""
+         problem_text = ""
+
         if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
-            problem_text = (
-                f"""**Impacto do problema reportado na unidade**
-"
-                f"- NPS com problema: **{problems['nps_problem']}**
-"
-                f"- NPS sem problema: **{problems['nps_no_problem']}**
-"
-                f"- Clientes com problema reportado: **{problems['pct_problem']}%**"
+            problem_text = f"""**Impacto do problema reportado na unidade**
+
+        - NPS com problema: **{problems['nps_problem']}**
+        - NPS sem problema: **{problems['nps_no_problem']}**
+        - Clientes com problema reportado: **{problems['pct_problem']}%**
+        """
             )
 
         return (
