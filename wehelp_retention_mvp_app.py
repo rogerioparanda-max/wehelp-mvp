@@ -561,8 +561,9 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
         intro = (
             f"**Leitura executiva da unidade**
 "
-            f"Unidade analisada: **{selected_unit}**. Seu NPS está em **{overall_nps}**, classificado como **{zone}**. "
-            f"A distância para o benchmark é de **{benchmark_gap}** pontos."
+           intro = f"""**Leitura executiva da unidade**
+            Unidade analisada: **{selected_unit}**. Seu NPS está em **{overall_nps}**, classificado como **{zone}**.
+            A distância para o benchmark é de **{benchmark_gap}** pontos."""
         )
         if selected_unit != "Todas as unidades" and pd.notna(network_nps):
             intro += f" O NPS geral da rede está em **{network_nps}**"
