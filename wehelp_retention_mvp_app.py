@@ -485,7 +485,7 @@ def answer_question(question: str, insights: Dict[str, object]) -> str:
 
        problem_text = ""
 if pd.notna(problems["nps_problem"]) and pd.notna(problems["nps_no_problem"]):
-    problem_text = (
+        problem_text = (
         f"**Impacto de problema reportado**\n"
         f"- NPS com problema: **{problems['nps_problem']}**\n"
         f"- NPS sem problema: **{problems['nps_no_problem']}**\n"
